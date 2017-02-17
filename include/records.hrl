@@ -23,6 +23,7 @@
 
 -record(records_header, {
           version :: 1..3,
+          header_offset :: pos_integer(),
           data_offset :: pos_integer(),
           start_offset :: pos_integer(),
           record_size :: pos_integer()

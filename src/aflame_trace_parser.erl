@@ -3,6 +3,8 @@
 -compile([{parse_transform, lager_transform}]).
 -behaviour(gen_server).
 
+-define(TRACE_HEADER_MAGIC, "SLOW").
+
 %% Public API
 -export([start_link/1,
          test/0]).
@@ -18,8 +20,11 @@
 -record(state, {
           trace_data :: binary(),
           ets_threads :: ets:tid(),
-          ets_methods :: ets:tid()
+          ets_methods :: ets:tid(),
+          trace_records :: [tuple()]
          }).
+
+%% Public interface methods
 
 start_link({file, FileName}) when is_binary(FileName) ->
     gen_server:start_link(?MODULE, [{file, FileName}], []).
@@ -71,22 +76,70 @@ code_change(OldVsn, State, _Extra) ->
 %%
 
 init_ets() ->
-    ThreadETS = ets:new(threads_map, [set, protected, {keypos, 2}]),
-    MethodETS = ets:new(methods_map, [set, protected, {keypos, 2}]),
+    ThreadETS = ets:new(threads_map, [set, protected, {keypos, #trace_thread.thread_id}]),
+    MethodETS = ets:new(methods_map, [set, protected, {keypos, #trace_method.method_id}]),
     {ThreadETS, MethodETS}.
 
 add_thread_record(#state{ets_threads=Ets}, Thread=#trace_thread{}) ->
-    lager:info("Adding thread: ~p~n", [Thread]),
     ets:insert(Ets, Thread).
 
 add_method_record(#state{ets_methods=Ets}, Method=#trace_method{}) ->
-    lager:info("Adding method: ~p~n", [Method]),
     ets:insert(Ets, Method).
 
 parse(State=#state{trace_data=Data}) ->
+    % Load threads, methods into ETS
     parse_threads(State, Data),
     parse_methods(State, Data),
-    ok.
+    % Load the trace header
+    TraceHeader = parse_trace_header(Data),
+    % Load the trace records
+    TraceRecords = parse_trace_records(Data, TraceHeader),
+    lager:info("Parsed ~p trace records~n", [length(TraceRecords)]),
+    State#state{
+        trace_records=TraceRecords
+    }.
+
+parse_trace_header(Data) ->
+    % Seek to the magic for the trace header
+    {HeaderPos, _} = binary:match(Data, <<?TRACE_HEADER_MAGIC>>),
+    % Extract the fields as binaries
+    <<?TRACE_HEADER_MAGIC, Version:2/binary, DataOffset:2/binary,
+      StartTime:8/binary, RecordSize:2/binary>> = binary:part(Data, {HeaderPos, 18}),
+    % Decode the numbers as littl-endian
+    #records_header{
+        version=binary:decode_unsigned(Version, little),
+        header_offset=HeaderPos,
+        data_offset=binary:decode_unsigned(DataOffset, little),
+        start_offset=binary:decode_unsigned(StartTime, little),
+        record_size=binary:decode_unsigned(RecordSize, little)
+    }.
+
+parse_trace_records(Data, Header=#records_header{}) ->
+    % Extract the subsection that contains actual records
+    HeaderOffset = Header#records_header.header_offset,
+    DataOffset = Header#records_header.data_offset,
+    SectionStart = DataOffset + HeaderOffset,
+    SectionEnd = byte_size(Data),
+    RecordSection = binary_part(Data, {SectionStart, SectionEnd - SectionStart}),
+
+    % Return a list of parsed records
+    RecordSize = Header#records_header.record_size,
+    Records = [
+        Record || <<Record:RecordSize/binary>>
+                  <= RecordSection
+    ],
+    ParsedRecords = [parse_trace_record(Record) || Record <- Records],
+    ParsedRecords.
+
+parse_trace_record(Record) ->
+    <<ThreadId:2/binary, MethodId:4/binary,
+      TimeDelta:4/binary, WallTimeDelta:4/binary>> = Record,
+    #call_record{
+       thread_id=binary:decode_unsigned(ThreadId, little),
+       method_id=binary:decode_unsigned(MethodId, little),
+       time_delta=binary:decode_unsigned(TimeDelta, little),
+       wall_time_delta=binary:decode_unsigned(WallTimeDelta, little)
+    }.
 
 parse_threads(State, Data) ->
     % Excerpt the section of the trace between the *threads marker and the
