@@ -33,5 +33,6 @@
           thread_id :: pos_integer(),
           method_id :: pos_integer(),
           time_delta :: pos_integer(),
-          wall_time_delta :: pos_integer()
+          wall_time_delta :: pos_integer(),
+          child_time :: pos_integer()
          }).

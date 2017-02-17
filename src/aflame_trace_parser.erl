@@ -9,6 +9,8 @@
 -export([start_link/1,
          get_thread/2,
          get_method/2,
+         get_flat_profiles/1,
+         get_flat_profile/2,
          test/0]).
 
 %% gen_server callbacks
@@ -41,6 +43,12 @@ get_thread(Pid, ThreadId) ->
 get_method(Pid, MethodId) ->
     gen_server:call(Pid, {get_method, MethodId}).
 
+get_flat_profiles(Pid) ->
+    gen_server:call(Pid, {get_flat_profile, all}).
+
+get_flat_profile(Pid, ThreadName) ->
+    gen_server:call(Pid, {get_flat_profile, {thread_name, ThreadName}}).
+
 %% Gen Server implementation
 
 init([{file, FileName}]) ->
@@ -63,6 +71,13 @@ handle_call({get_thread, Id}, _From, State) ->
     {reply, get_thread_by_id(State, Id), State};
 handle_call({get_method, Id}, _From, State) ->
     {reply, get_method_by_id(State, Id), State};
+handle_call({get_flat_profile, all}, _From, State) ->
+    ThreadNames = all_thread_names(State),
+    {reply, [
+             get_profile_for_thread(State, Name)
+             || Name <- ThreadNames], State};
+handle_call({get_flat_profile, {thread_name, Thread}}, _From, State) ->
+    {reply, get_profile_for_thread(State, Thread), State};
 handle_call(Request, From, State) ->
     lager:info("Call ~p From ~p", [Request, From]),
     {reply, ignored, State}.
@@ -103,6 +118,15 @@ get_thread_by_id(#state{ets_threads=Ets}, Id) when is_integer(Id) ->
         [] -> not_found
     end.
 
+get_thread_by_name(State=#state{ets_threads=Ets}, Name) when is_binary(Name) ->
+    case ets:match(Ets, #trace_thread{thread_name=Name, thread_id='$1'}) of
+        [[ThreadId]] -> get_thread_by_id(State, ThreadId);
+        [] -> not_found
+    end.
+
+all_thread_names(#state{ets_threads=Ets}) ->
+    ets:match(Ets, #trace_thread{thread_name='$1', _='_'}).
+
 add_method_record(#state{ets_methods=Ets}, Method=#trace_method{}) ->
     ets:insert(Ets, Method).
 
@@ -111,6 +135,101 @@ get_method_by_id(#state{ets_methods=Ets}, Id) when is_integer(Id) ->
         [Method] -> Method;
         [] -> not_found
     end.
+
+get_profile_for_thread(State=#state{trace_records=Records}, ThreadName) ->
+    Thread = get_thread_by_name(State, ThreadName),
+    ThreadCalls = [
+                   Record || Record <- Records,
+                             Record#call_record.thread_id == Thread#trace_thread.thread_id
+                  ],
+    BaseWallTime = lists:foldl(
+                     fun(X, Min) -> case X < Min of true -> X; false -> Min end end,
+                     element(#call_record.wall_time_delta, hd(ThreadCalls)),
+                     [Call#call_record.wall_time_delta || Call <- ThreadCalls]
+                    ),
+    lager:info("Starting wall time for thread: ~p~n", [BaseWallTime]),
+    FlatStack = accumulate_flat_stack(State, BaseWallTime, ThreadCalls, [], [], []),
+    FlatStack.
+
+accumulate_flat_stack(_State, _StartTime, [], _TempStack, _NameStack, FlatStack) ->
+    lists:reverse(FlatStack);
+accumulate_flat_stack(State, StartTime, [Call|Calls], TempStack, NameStack, FlatStack) ->
+    MethodId = Call#call_record.method_id,
+    IsMethodExit = MethodId rem 2 == 1,
+    Method = get_method_by_id(State, MethodId - (MethodId rem 2)),
+    ClassName = Method#trace_method.class_name,
+    MethodName = Method#trace_method.method_name,
+    MethodDesc = <<ClassName/binary, "#", MethodName/binary>>,
+
+    NewNameStack =
+    case IsMethodExit of
+        false -> [MethodDesc|NameStack];
+        true -> case NameStack of
+                    [] -> [];
+                    [_OurName|Others] -> Others
+                end
+    end,
+
+    {StackEntry, NewTempStack} =
+    case IsMethodExit of
+        % If this is the entry of a method, then just push it to our running stack.
+        false -> {undefined, [Call|TempStack]};
+        % On method exit, use the entry point of the call to calculate how much
+        % time we + our callees consumed. Then add our total time from our
+        % parent's child_time field, if we have a parent, and push a flat stack
+        % entry onto the list
+        true ->
+            case TempStack of
+                % The beginning of the trace can have
+                % methods with no entry
+                [] -> {undefined, []};
+                [StartFrame|[]] ->
+                    % We are the only one on the stack, don't
+                    % need to update a parent
+                    SelfAndChildTime = Call#call_record.wall_time_delta - StartFrame#call_record.wall_time_delta,
+                    SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
+
+                    StackLine = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
+                    SelfTimeBinary = integer_to_binary(SelfTime),
+                    {<<StackLine/binary, " ", SelfTimeBinary/binary>>, []};
+                [StartFrame|[Parent|Stack]] ->
+                    % Calc elapsed from StartFrame and Call
+                    SelfAndChildTime = Call#call_record.wall_time_delta - StartFrame#call_record.wall_time_delta,
+                    SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
+
+                    % Update the parent frame with how long this child took
+                    NewParent = Parent#call_record{
+                                  child_time = Parent#call_record.child_time + SelfAndChildTime
+                                 },
+
+                    % StackLine = binary_join(lists:reverse([MethodDesc | TempStack]), <<";">>),
+                    % StackEntry = <<StackLine/binary, " ", SampleCount/binary>>,
+                    StackLine = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
+                    SelfTimeBinary = integer_to_binary(SelfTime),
+                    {<<StackLine/binary, " ", SelfTimeBinary/binary>>, [NewParent | Stack]}
+            end
+    end,
+
+    accumulate_flat_stack(
+      State,
+      StartTime,
+      Calls,
+      NewTempStack,
+      NewNameStack,
+      case StackEntry of
+          undefined -> FlatStack;
+          V -> [V | FlatStack]
+      end
+     ).
+
+binary_join(BinList, Separator) ->
+    lists:foldr(
+      fun(BinA, BinB) ->
+              <<BinA/binary, Separator/binary, BinB/binary>>
+      end,
+      <<"">>,
+      BinList
+     ).
 
 parse(State=#state{trace_data=Data}) ->
     % Load threads, methods into ETS
@@ -122,8 +241,8 @@ parse(State=#state{trace_data=Data}) ->
     TraceRecords = parse_trace_records(Data, TraceHeader),
     lager:info("Parsed ~p trace records~n", [length(TraceRecords)]),
     State#state{
-        trace_records=TraceRecords
-    }.
+      trace_records=TraceRecords
+     }.
 
 parse_trace_header(Data) ->
     % Seek to the magic for the trace header
@@ -133,12 +252,12 @@ parse_trace_header(Data) ->
       StartTime:8/binary, RecordSize:2/binary>> = binary:part(Data, {HeaderPos, 18}),
     % Decode the numbers as littl-endian
     #records_header{
-        version=binary:decode_unsigned(Version, little),
-        header_offset=HeaderPos,
-        data_offset=binary:decode_unsigned(DataOffset, little),
-        start_offset=binary:decode_unsigned(StartTime, little),
-        record_size=binary:decode_unsigned(RecordSize, little)
-    }.
+       version=binary:decode_unsigned(Version, little),
+       header_offset=HeaderPos,
+       data_offset=binary:decode_unsigned(DataOffset, little),
+       start_offset=binary:decode_unsigned(StartTime, little),
+       record_size=binary:decode_unsigned(RecordSize, little)
+      }.
 
 parse_trace_records(Data, Header=#records_header{}) ->
     % Extract the subsection that contains actual records
@@ -164,8 +283,9 @@ parse_trace_record(Record) ->
        thread_id=binary:decode_unsigned(ThreadId, little),
        method_id=binary:decode_unsigned(MethodId, little),
        time_delta=binary:decode_unsigned(TimeDelta, little),
-       wall_time_delta=binary:decode_unsigned(WallTimeDelta, little)
-    }.
+       wall_time_delta=binary:decode_unsigned(WallTimeDelta, little),
+       child_time=0
+      }.
 
 parse_threads(State, Data) ->
     % Excerpt the section of the trace between the *threads marker and the
