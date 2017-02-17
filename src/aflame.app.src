@@ -1,0 +1,18 @@
+{application, aflame,
+ [{description, "Android Trace flamegraph generator"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, { aflame_app, []}},
+  {applications,
+   [kernel,
+    lager,
+    cowboy,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, []},
+  {links, []}
+ ]}.
