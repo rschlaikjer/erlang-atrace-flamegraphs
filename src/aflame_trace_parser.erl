@@ -4,6 +4,7 @@
 -behaviour(gen_server).
 
 -define(TRACE_HEADER_MAGIC, "SLOW").
+-define(TIMEOUT, 30000).
 
 %% Public API
 -export([start_link/1,
@@ -44,10 +45,10 @@ get_method(Pid, MethodId) ->
     gen_server:call(Pid, {get_method, MethodId}).
 
 get_flat_profiles(Pid) ->
-    gen_server:call(Pid, {get_flat_profile, all}).
+    gen_server:call(Pid, {get_flat_profile, all}, ?TIMEOUT).
 
 get_flat_profile(Pid, ThreadName) ->
-    gen_server:call(Pid, {get_flat_profile, {thread_name, ThreadName}}).
+    gen_server:call(Pid, {get_flat_profile, {thread_name, ThreadName}}, ?TIMEOUT).
 
 %% Gen Server implementation
 
