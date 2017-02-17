@@ -1,4 +1,4 @@
--module(aflame_sup).
+-module(aflame_parser_sup).
 
 -behaviour(supervisor).
 
@@ -21,20 +21,14 @@ start_link() ->
 %% Supervisor callbacks
 %%====================================================================
 
-%% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
-init([]) ->
-    Children = [
-    {
-        aflame_parser_sup,
-        {aflame_parser_sup, start_link, []},
-        permanent,
-        3000,
-        supervisor,
-        [aflame_parser_sup]
-    }
-	],
-    {ok, { {one_for_one, 10, 10}, Children} }.
+child_spec() -> {
+  aflame_trace_parser,
+  {aflame_trace_parser, start_link, []},
+  transient,
+  3000,
+  worker,
+  [aflame_trace_parser]
+ }.
 
-%%====================================================================
-%% Internal functions
-%%====================================================================
+init([]) ->
+    {ok, { {simple_one_for_one, 10, 10}, [child_spec()]} }.
