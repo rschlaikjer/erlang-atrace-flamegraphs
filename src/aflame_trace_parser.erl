@@ -7,6 +7,8 @@
 
 %% Public API
 -export([start_link/1,
+         get_thread/2,
+         get_method/2,
          test/0]).
 
 %% gen_server callbacks
@@ -33,6 +35,14 @@ test() ->
     {ok, Pid} = start_link({file, <<"/home/ross/onResume.trace">>}),
     Pid.
 
+get_thread(Pid, ThreadId) ->
+    gen_server:call(Pid, {get_thread, ThreadId}).
+
+get_method(Pid, MethodId) ->
+    gen_server:call(Pid, {get_method, MethodId}).
+
+%% Gen Server implementation
+
 init([{file, FileName}]) ->
     lager:info("Reading trace data for file ~p~n", [FileName]),
     case file:read_file(FileName) of
@@ -49,6 +59,10 @@ init([{binary, RawTrace}]) ->
             ets_methods=MethodETS
            }}.
 
+handle_call({get_thread, Id}, _From, State) ->
+    {reply, get_thread_by_id(State, Id), State};
+handle_call({get_method, Id}, _From, State) ->
+    {reply, get_method_by_id(State, Id), State};
 handle_call(Request, From, State) ->
     lager:info("Call ~p From ~p", [Request, From]),
     {reply, ignored, State}.
@@ -83,8 +97,20 @@ init_ets() ->
 add_thread_record(#state{ets_threads=Ets}, Thread=#trace_thread{}) ->
     ets:insert(Ets, Thread).
 
+get_thread_by_id(#state{ets_threads=Ets}, Id) when is_integer(Id) ->
+    case ets:lookup(Ets, Id) of
+        [Thread] -> Thread;
+        [] -> not_found
+    end.
+
 add_method_record(#state{ets_methods=Ets}, Method=#trace_method{}) ->
     ets:insert(Ets, Method).
+
+get_method_by_id(#state{ets_methods=Ets}, Id) when is_integer(Id) ->
+    case ets:lookup(Ets, Id) of
+        [Method] -> Method;
+        [] -> not_found
+    end.
 
 parse(State=#state{trace_data=Data}) ->
     % Load threads, methods into ETS
