@@ -4,11 +4,13 @@
 -behaviour(gen_server).
 
 -define(TRACE_HEADER_MAGIC, "SLOW").
--define(TIMEOUT, 30000).
+-define(TIMEOUT, infinity).
 
 %% Public API
 -export([start_link/1,
+         close/1,
          get_thread/2,
+         get_thread_names/1,
          get_method/2,
          get_flat_profiles/1,
          get_flat_profile/2,
@@ -37,6 +39,12 @@ start_link({file, FileName}) when is_binary(FileName) ->
 test() ->
     {ok, Pid} = start_link({file, <<"/home/ross/onResume.trace">>}),
     Pid.
+
+close(Pid) ->
+    gen_server:stop(Pid).
+
+get_thread_names(Pid) ->
+    gen_server:call(Pid, get_thread_names).
 
 get_thread(Pid, ThreadId) ->
     gen_server:call(Pid, {get_thread, ThreadId}).
@@ -70,6 +78,8 @@ init([{binary, RawTrace}]) ->
 
 handle_call({get_thread, Id}, _From, State) ->
     {reply, get_thread_by_id(State, Id), State};
+handle_call(get_thread_names, _From, State) ->
+    {reply, all_thread_names(State), State};
 handle_call({get_method, Id}, _From, State) ->
     {reply, get_method_by_id(State, Id), State};
 handle_call({get_flat_profile, all}, _From, State) ->
@@ -121,12 +131,13 @@ get_thread_by_id(#state{ets_threads=Ets}, Id) when is_integer(Id) ->
 
 get_thread_by_name(State=#state{ets_threads=Ets}, Name) when is_binary(Name) ->
     case ets:match(Ets, #trace_thread{thread_name=Name, thread_id='$1'}) of
+        [[ThreadId]|_ThreadIds] -> get_thread_by_id(State, ThreadId);
         [[ThreadId]] -> get_thread_by_id(State, ThreadId);
         [] -> not_found
     end.
 
 all_thread_names(#state{ets_threads=Ets}) ->
-    ets:match(Ets, #trace_thread{thread_name='$1', _='_'}).
+    [Name || [Name] <- ets:match(Ets, #trace_thread{thread_name='$1', _='_'})].
 
 add_method_record(#state{ets_methods=Ets}, Method=#trace_method{}) ->
     ets:insert(Ets, Method).
@@ -143,21 +154,21 @@ get_profile_for_thread(State=#state{trace_records=Records}, ThreadName) ->
                    Record || Record <- Records,
                              Record#call_record.thread_id == Thread#trace_thread.thread_id
                   ],
-    BaseWallTime = lists:foldl(
-                     fun(X, Min) -> case X < Min of true -> X; false -> Min end end,
-                     element(#call_record.wall_time_delta, hd(ThreadCalls)),
-                     [Call#call_record.wall_time_delta || Call <- ThreadCalls]
-                    ),
-    lager:info("Starting wall time for thread: ~p~n", [BaseWallTime]),
-    FlatStack = accumulate_flat_stack(State, BaseWallTime, ThreadCalls, [], [], []),
+    FlatStack = accumulate_flat_stack(State, ThreadCalls, [], [], []),
     FlatStack.
 
-accumulate_flat_stack(_State, _StartTime, [], _TempStack, _NameStack, FlatStack) ->
+accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStack) ->
     lists:reverse(FlatStack);
-accumulate_flat_stack(State, StartTime, [Call|Calls], TempStack, NameStack, FlatStack) ->
+accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStack) ->
     MethodId = Call#call_record.method_id,
     IsMethodExit = MethodId rem 2 == 1,
-    Method = get_method_by_id(State, MethodId - (MethodId rem 2)),
+    Method = case get_method_by_id(State, MethodId - (MethodId rem 2)) of
+                    not_found -> #trace_method{
+                                    class_name = <<"?Class">>,
+                                    method_name = <<"?Method">>
+                                   };
+                    M -> M
+             end,
     ClassName = Method#trace_method.class_name,
     MethodName = Method#trace_method.method_name,
     MethodDesc = <<ClassName/binary, "#", MethodName/binary>>,
@@ -189,10 +200,9 @@ accumulate_flat_stack(State, StartTime, [Call|Calls], TempStack, NameStack, Flat
                     % need to update a parent
                     SelfAndChildTime = Call#call_record.wall_time_delta - StartFrame#call_record.wall_time_delta,
                     SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
-
-                    StackLine = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
                     SelfTimeBinary = integer_to_binary(SelfTime),
-                    {<<StackLine/binary, " ", SelfTimeBinary/binary>>, []};
+                    Line = make_flat_line(lists:reverse([MethodDesc | NewNameStack]), SelfTimeBinary),
+                    {Line, []};
                 [StartFrame|[Parent|Stack]] ->
                     % Calc elapsed from StartFrame and Call
                     SelfAndChildTime = Call#call_record.wall_time_delta - StartFrame#call_record.wall_time_delta,
@@ -205,15 +215,14 @@ accumulate_flat_stack(State, StartTime, [Call|Calls], TempStack, NameStack, Flat
 
                     % StackLine = binary_join(lists:reverse([MethodDesc | TempStack]), <<";">>),
                     % StackEntry = <<StackLine/binary, " ", SampleCount/binary>>,
-                    StackLine = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
                     SelfTimeBinary = integer_to_binary(SelfTime),
-                    {<<StackLine/binary, " ", SelfTimeBinary/binary>>, [NewParent | Stack]}
+                    Line = make_flat_line(lists:reverse([MethodDesc | NewNameStack]), SelfTimeBinary),
+                    {Line, [NewParent | Stack]}
             end
     end,
 
     accumulate_flat_stack(
       State,
-      StartTime,
       Calls,
       NewTempStack,
       NewNameStack,
@@ -222,6 +231,10 @@ accumulate_flat_stack(State, StartTime, [Call|Calls], TempStack, NameStack, Flat
           V -> [V | FlatStack]
       end
      ).
+
+make_flat_line(Names, Time) ->
+    NameBin = binary_join(Names, <<";">>),
+    <<NameBin/binary, " ", Time/binary, "\n">>.
 
 binary_join(BinList, Separator) ->
     lists:foldr(
