@@ -154,20 +154,22 @@ get_profile_for_thread(State=#state{trace_records=Records}, ThreadName) ->
                    Record || Record <- Records,
                              Record#call_record.thread_id == Thread#trace_thread.thread_id
                   ],
-    FlatStack = accumulate_flat_stack(State, ThreadCalls, [], [], []),
+    FlatStack = accumulate_flat_stack(State, ThreadCalls),
     FlatStack.
 
-accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStack) ->
-    lists:reverse(FlatStack);
-accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStack) ->
+accumulate_flat_stack(State, Calls) ->
+    accumulate_flat_stack(State, Calls, [], [], maps:new()).
+accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
+    FlatStackMap;
+accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) ->
     MethodId = Call#call_record.method_id,
     IsMethodExit = MethodId rem 2 == 1,
     Method = case get_method_by_id(State, MethodId - (MethodId rem 2)) of
-                    not_found -> #trace_method{
-                                    class_name = <<"?Class">>,
-                                    method_name = <<"?Method">>
-                                   };
-                    M -> M
+                 not_found -> #trace_method{
+                                 class_name = <<"?Class">>,
+                                 method_name = <<"?Method">>
+                                };
+                 M -> M
              end,
     ClassName = Method#trace_method.class_name,
     MethodName = Method#trace_method.method_name,
@@ -200,9 +202,8 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStack) ->
                     % need to update a parent
                     SelfAndChildTime = Call#call_record.wall_time_delta - StartFrame#call_record.wall_time_delta,
                     SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
-                    SelfTimeBinary = integer_to_binary(SelfTime),
-                    Line = make_flat_line(lists:reverse([MethodDesc | NewNameStack]), SelfTimeBinary),
-                    {Line, []};
+                    Frame = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
+                    {{Frame, SelfTime}, []};
                 [StartFrame|[Parent|Stack]] ->
                     % Calc elapsed from StartFrame and Call
                     SelfAndChildTime = Call#call_record.wall_time_delta - StartFrame#call_record.wall_time_delta,
@@ -215,26 +216,24 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStack) ->
 
                     % StackLine = binary_join(lists:reverse([MethodDesc | TempStack]), <<";">>),
                     % StackEntry = <<StackLine/binary, " ", SampleCount/binary>>,
-                    SelfTimeBinary = integer_to_binary(SelfTime),
-                    Line = make_flat_line(lists:reverse([MethodDesc | NewNameStack]), SelfTimeBinary),
-                    {Line, [NewParent | Stack]}
+                    Frame = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
+                    {{Frame, SelfTime}, [NewParent | Stack]}
             end
     end,
 
-    accumulate_flat_stack(
-      State,
-      Calls,
-      NewTempStack,
-      NewNameStack,
-      case StackEntry of
-          undefined -> FlatStack;
-          V -> [V | FlatStack]
-      end
-     ).
+    NewStackMap =
+    case StackEntry of
+        undefined -> FlatStackMap;
+        {StackLine, Time} ->
+            maps:update_with(
+              StackLine,
+              fun (OldTime) -> OldTime + Time end,
+              Time,
+              FlatStackMap
+             )
+    end,
 
-make_flat_line(Names, Time) ->
-    NameBin = binary_join(Names, <<";">>),
-    <<NameBin/binary, " ", Time/binary, "\n">>.
+    accumulate_flat_stack(State, Calls, NewTempStack, NewNameStack, NewStackMap).
 
 binary_join(BinList, Separator) ->
     lists:foldr(
@@ -284,9 +283,9 @@ parse_trace_records(Data, Header=#records_header{}) ->
     % Return a list of parsed records
     RecordSize = Header#records_header.record_size,
     Records = [
-        Record || <<Record:RecordSize/binary>>
-                  <= RecordSection
-    ],
+               Record || <<Record:RecordSize/binary>>
+                         <= RecordSection
+              ],
     ParsedRecords = [parse_trace_record(Record) || Record <- Records],
     ParsedRecords.
 

@@ -27,12 +27,21 @@ flatten_file(InFile, OutPath) ->
 flatten_thread(Parser, OutPath, ThreadName) ->
     lager:info("Flattening thread: ~p~n", [ThreadName]),
     Profile = aflame_trace_parser:get_flat_profile(Parser, ThreadName),
+    lager:info("Generated ~p stack records~n", [maps:size(Profile)]),
+    OutBinary = maps:fold(
+                  fun(K, V, Acc) ->
+                    VBin = integer_to_binary(V),
+                    <<K/binary, " ", VBin/binary, "\n", Acc/binary>>
+                  end,
+                  <<"">>,
+                  Profile
+                 ),
     OutName = binary:replace(ThreadName, <<"/">>, <<".">>, [global]),
     OutFile = <<OutPath/binary, "/", OutName/binary, ".flat">>,
     lager:info("Start writing output file ~s~n", [OutFile]),
     {ok, File} = file:open(OutFile, [write]),
     file:truncate(File),
-    file:write(File, Profile),
+    file:write(File, OutBinary),
     lager:info("Finished writing ~s~n", [OutFile]).
 
 doAll() ->
