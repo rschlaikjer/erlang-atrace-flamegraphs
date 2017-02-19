@@ -136,7 +136,7 @@ write_thread(Profile, OutPath, ThreadName) ->
                   "flamegraph",
                   "--title", quote_string(ThreadName),
                   "--hash",
-                  "--countname", "nanoseconds",
+                  "--countname", "microseconds",
                   quote_string(OutFile), ">", quote_string(GraphFile)
                  ]
                 ),
