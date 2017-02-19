@@ -66,9 +66,51 @@ internal_error(Req) ->
 
 handle_rest(Req, ["upload_trace"]) ->
     upload_trace(Req);
+handle_rest(Req, ["trace", Trace]) ->
+    view_trace(Req, Trace);
+handle_rest(Req, ["trace", Trace, SvgName]) ->
+    view_svg(Req, Trace, SvgName);
 handle_rest(Req, Path) ->
     lager:info("Requested unknown url: ~p~n", [Path]),
     write_reply(Req, "Unknown URL", 404).
+
+view_trace(Req, Trace) ->
+    case aflame_fs:trace_exists(Trace) of
+        false -> write_reply(Req, "Trace not found", 404);
+        true ->
+            IndexFile = filename:join(
+                          aflame_fs:output_dir(Trace),
+                          "index.html"
+                         ),
+            F = fun (Socket, Transport) ->
+                        Transport:sendfile(Socket, IndexFile)
+                end,
+            Req2 = cowboy_req:set_resp_body_fun(F, Req),
+            cowboy_req:reply(
+              200,
+              [{"content-type", "text/html; encoding=utf-8"}],
+              Req2
+            )
+    end.
+
+view_svg(Req, Trace, Svg) ->
+    case aflame_fs:trace_exists(Trace) of
+        false -> write_reply(Req, "Trace not found", 404);
+        true ->
+            File = filename:join(
+                          aflame_fs:output_dir(Trace),
+                          Svg
+                         ),
+            F = fun (Socket, Transport) ->
+                        Transport:sendfile(Socket, File)
+                end,
+            Req2 = cowboy_req:set_resp_body_fun(F, Req),
+            cowboy_req:reply(
+              200,
+              [{"content-type", "image/svg+xml; encoding=utf-8"}],
+              Req2
+            )
+    end.
 
 upload_trace(Req) ->
     case cowboy_req:parse_header(<<"content-type">>, Req) of
@@ -97,17 +139,19 @@ upload_trace_multipart(Req) ->
                                    lager:info("Wrote new trace to ~p~n", [Md5]),
                                    aflame_grapher_worker:process_trace(Md5),
                                    BMd5 = list_to_binary(Md5),
-                                   cowboy_req:reply(
-                                     302,
-                                     [{<<"Location">>, <<"/trace/", BMd5/binary>>}],
-                                     <<"">>,
-                                     Req3
-                                    );
+                                   {ok, Req5} = cowboy_req:reply(
+                                                  302,
+                                                  [{<<"Location">>, <<"/trace/", BMd5/binary>>}],
+                                                  <<"">>,
+                                                  Req3
+                                                 ),
+                                   Req5;
                                {error, trace_too_large} ->
-                                   write_reply(
-                                     Req,
-                                     io_lib:format("Tracefile too large - max size ~p~n", [max_trace_size()])
-                                    )
+                                   {ok, Req3} = write_reply(
+                                                  Req,
+                                                  io_lib:format("Tracefile too large - max size ~p~n", [max_trace_size()])
+                                                 ),
+                                   Req3
                            end;
                        {file, FieldName, Filename, _CType, _CTransferEncoding} ->
                            lager:info("Got unknown file field: ~p / ~p~n", [FieldName, Filename]),
@@ -115,7 +159,7 @@ upload_trace_multipart(Req) ->
                    end,
             upload_trace_multipart(Req4);
         {done, Req2} ->
-            Req2
+            {ok, Req2}
     end.
 
 stream_trace_to_file(Req, OutFile) ->

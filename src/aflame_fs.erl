@@ -10,7 +10,9 @@
          get_temp_file/0,
          get_trace_file/1,
          output_dir/1,
-         rename_to_md5/1
+         rename_to_md5/1,
+         get_trace_index/1,
+         trace_exists/1
         ]).
 
 base_dir() ->
@@ -32,6 +34,14 @@ get_trace_file(Md5) ->
        io_lib:format("~s.trace", [Md5])
       ]).
 
+get_trace_index(Md5) ->
+    filename:join(
+      [
+       output_dir(Md5),
+       "index.html"
+      ]).
+
+
 get_temp_file() ->
     Name = uuid:to_string(uuid:uuid4()),
     FqName = filename:join(temp_dir(), Name),
@@ -52,13 +62,18 @@ rename_to_md5(Name) ->
     NewFqName = get_trace_file(Md5),
     ok = filelib:ensure_dir(NewFqName),
     ok = file:rename(FqName, NewFqName),
+    file:write_file(
+      get_trace_index(Md5),
+      <<"<meta http-equiv=\"refresh\" content=\"5\"><center><h1>Processing Trace</h1></center>">>,
+      [write]
+    ),
     {ok, Md5}.
 
 hash_file(Fd, Hash) ->
     case file:read(Fd, ?BLOCK_SIZE) of
         {ok, Data} ->
-            crypto:hash_update(Hash, Data),
-            hash_file(Fd, Hash);
+            Hash1 = crypto:hash_update(Hash, Data),
+            hash_file(Fd, Hash1);
         eof ->
             {ok, Hash};
         {error, Reason} ->
@@ -69,3 +84,6 @@ digest_to_ascii(Digest) ->
     lists:flatten(
       [[io_lib:format("~2.16.0B",[X]) || <<X:8>> <= Digest ]]
      ).
+
+trace_exists(Trace) ->
+    filelib:is_file(get_trace_file(Trace)).

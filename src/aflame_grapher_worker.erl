@@ -60,18 +60,52 @@ do_process_trace(Md5) ->
     OutPath = list_to_binary(aflame_fs:output_dir(Md5)),
     {ok, Parser} = aflame_trace_parser:start_link({file, InFile}),
     ThreadNames = aflame_trace_parser:get_thread_names(Parser),
-    lists:map(
+    OutNames = lists:map(
       fun(ThreadName) -> flatten_thread(Parser, OutPath, ThreadName) end,
       ThreadNames
      ),
+    SvgNames = lists:filter(
+        fun(Name) -> Name /= undefined end,
+        OutNames
+    ),
+    write_index_file(Md5, lists:sort(SvgNames)),
     aflame_trace_parser:close(Parser).
+
+write_index_file(Md5, SvgNames) ->
+    {ok, OutFile} = file:open(aflame_fs:get_trace_index(Md5), [write]),
+    ok = file:write(OutFile, ["<center><h1>", Md5, "</h1><br/>"]),
+    % Always put the main thread at the top
+    ok = write_svg_entry(OutFile, Md5, "main"),
+    lists:map(
+      fun (SvgName) ->
+              case SvgName of
+                  <<"main">> ->
+                      ok;
+                  Name ->
+                    ok = write_svg_entry(OutFile, Md5, Name)
+              end
+      end,
+      SvgNames
+     ),
+    file:close(OutFile),
+    ok.
+
+write_svg_entry(OutFile, Md5, SvgName) when is_binary(SvgName) ->
+    write_svg_entry(OutFile, Md5, binary_to_list(SvgName));
+write_svg_entry(OutFile, Md5, SvgName) ->
+    file:write(
+      OutFile,
+      ["<object data='/trace/", Md5, "/", SvgName, ".svg' type='image/svg+xml'></object><br/>"]
+    ).
 
 flatten_thread(Parser, OutPath, ThreadName) ->
     lager:info("Flattening thread: ~p~n", [ThreadName]),
     Profile = aflame_trace_parser:get_flat_profile(Parser, ThreadName),
     case maps:size(Profile) of
-        0 -> ok;
-        _ -> write_thread(Profile, OutPath, ThreadName)
+        0 -> undefined;
+        _ ->
+            {ok, OutName} = write_thread(Profile, OutPath, ThreadName),
+            OutName
     end.
 
 write_thread(Profile, OutPath, ThreadName) ->
@@ -83,7 +117,12 @@ write_thread(Profile, OutPath, ThreadName) ->
                   <<"">>,
                   Profile
                  ),
-    OutName = binary:replace(ThreadName, <<"/">>, <<".">>, [global]),
+    OutName = binary:replace(
+                ThreadName,
+                [<<"/">>, <<" ">>, <<"#">>],
+                <<".">>,
+                [global]
+            ),
     OutFile = <<OutPath/binary, "/", OutName/binary, ".flat">>,
     GraphFile = <<OutPath/binary, "/", OutName/binary, ".svg">>,
     lager:info("Start writing output file ~s~n", [OutFile]),
@@ -102,7 +141,7 @@ write_thread(Profile, OutPath, ThreadName) ->
                  ]
                 ),
     _Ret = os:cmd(GraphCmd),
-    ok.
+    {ok, OutName}.
 
 quote_string(String) ->
     io_lib:format("'~s'", [String]).
