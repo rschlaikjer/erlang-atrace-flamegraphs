@@ -3,25 +3,27 @@
 -define(MAX_TRACE_SIZE, 33554432).
 
 -export([
-    start/0,
-    init/3,
-    handle/2,
-    terminate/3
-]).
+         start/0,
+         init/3,
+         handle/2,
+         terminate/3
+        ]).
 
 -compile([{parse_transform, lager_transform}]).
 
 start() ->
     {ok, ServerInfo} = application:get_env(aflame, server),
     Port = proplists:get_value(http_port, ServerInfo),
-    Dispatch = cowboy_router:compile([
-        {'_', [
-            {'_', ?MODULE, []}
-        ]}
-    ]),
+    Dispatch = cowboy_router:compile(
+                 [
+                  {'_', [
+                         {"/", cowboy_static, {priv_file, aflame, "index.html"}},
+                         {'_', ?MODULE, []}
+                        ]}
+                 ]),
     {ok, _} = cowboy:start_http(
-        http, 10, [{port, Port}], [{env, [{dispatch, Dispatch}]}]
-    ),
+                http, 10, [{port, Port}], [{env, [{dispatch, Dispatch}]}]
+               ),
     ok.
 
 max_trace_size() ->
@@ -54,9 +56,10 @@ handle(Req, State) ->
 write_reply(Req, Data) ->
     write_reply(Req, Data, 200).
 write_reply(Req, Data, Code) ->
-    cowboy_req:reply(Code, [
-        {<<"content-type">>, <<"text/plain; charset=utf-8">>}
-    ], Data, Req).
+    cowboy_req:reply(
+      Code, [
+             {<<"content-type">>, <<"text/plain; charset=utf-8">>}
+            ], Data, Req).
 
 internal_error(Req) ->
     write_reply(Req, "Internal error", 500).
@@ -68,19 +71,51 @@ handle_rest(Req, Path) ->
     write_reply(Req, "Unknown URL", 404).
 
 upload_trace(Req) ->
-    {ok, OutName, OutFile} = aflame_fs:get_temp_file(),
-    case stream_trace_to_file(Req, OutFile) of
-        {ok, Req1} ->
-            file:close(OutFile),
-            {ok, Md5} = aflame_fs:rename_to_md5(OutName),
-            lager:info("Wrote new trace to ~p~n", [Md5]),
-            aflame_grapher_worker:process_trace(Md5),
-            write_reply(Req1, "OK");
-        {error, trace_too_large} ->
-            write_reply(
-              Req,
-              io_lib:format("Tracefile too large - max size ~p~n", [max_trace_size()])
-             )
+    case cowboy_req:parse_header(<<"content-type">>, Req) of
+        {ok, {<<"multipart">>, <<"form-data">>, _}, Req2} ->
+            upload_trace_multipart(Req2);
+        Other -> write_reply(
+                   Req,
+                   io_lib:format("Unexpected request type ~p~n", [Other])
+                  )
+    end.
+
+upload_trace_multipart(Req) ->
+    case cowboy_req:part(Req) of
+        {ok, Headers, Req2} ->
+            Req4 = case cow_multipart:form_data(Headers) of
+                       {data, FieldName} ->
+                           lager:info("Got unknown data field: ~p~n", [FieldName]),
+                           {ok, _Body, Req3} = cowboy_req:part_body(Req2),
+                           Req3;
+                       {file, <<"trace_file">>, _Filename, _CType, _CTransferEncoding} ->
+                           {ok, OutName, OutFile} = aflame_fs:get_temp_file(),
+                           case stream_trace_to_file(Req2, OutFile) of
+                               {ok, Req3} ->
+                                   file:close(OutFile),
+                                   {ok, Md5} = aflame_fs:rename_to_md5(OutName),
+                                   lager:info("Wrote new trace to ~p~n", [Md5]),
+                                   aflame_grapher_worker:process_trace(Md5),
+                                   BMd5 = list_to_binary(Md5),
+                                   cowboy_req:reply(
+                                     302,
+                                     [{<<"Location">>, <<"/trace/", BMd5/binary>>}],
+                                     <<"">>,
+                                     Req3
+                                    );
+                               {error, trace_too_large} ->
+                                   write_reply(
+                                     Req,
+                                     io_lib:format("Tracefile too large - max size ~p~n", [max_trace_size()])
+                                    )
+                           end;
+                       {file, FieldName, Filename, _CType, _CTransferEncoding} ->
+                           lager:info("Got unknown file field: ~p / ~p~n", [FieldName, Filename]),
+                           {ok, Req2}
+                   end,
+            upload_trace_multipart(Req4);
+        {done, Req2} ->
+            Req2
     end.
 
 stream_trace_to_file(Req, OutFile) ->
@@ -88,7 +123,7 @@ stream_trace_to_file(Req, OutFile) ->
 stream_trace_to_file(_Req, _OutFile, Bytes) when Bytes > ?MAX_TRACE_SIZE ->
     {error, trace_too_large};
 stream_trace_to_file(Req, OutFile, Bytes) ->
-    case cowboy_req:body(Req) of
+    case cowboy_req:part_body(Req) of
         {ok, Data, Req1} ->
             file:write(OutFile, Data),
             {ok, Req1};
