@@ -31,6 +31,14 @@ init([]) ->
         3000,
         supervisor,
         [aflame_parser_sup]
+    },
+        poolboy:child_spec(
+          grapher,
+          [{name, {local, grapher}},
+           {worker_module, aflame_grapher_worker},
+           {size, 10}],
+          []
+        ),
     }
 	],
     {ok, { {one_for_one, 10, 10}, Children} }.

@@ -4,6 +4,7 @@
 -export([
     doAll/0,
     test/0,
+    process_trace/1,
     flatten_main/2,
     flatten_file/2]).
 
