@@ -33,6 +33,8 @@
 
 %% Public interface methods
 
+start_link({file, FileName}) when is_list(FileName) ->
+    start_link({file, list_to_binary(FileName)});
 start_link({file, FileName}) when is_binary(FileName) ->
     gen_server:start_link(?MODULE, [{file, FileName}], []).
 

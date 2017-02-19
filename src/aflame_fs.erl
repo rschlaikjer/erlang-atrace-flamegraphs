@@ -8,6 +8,8 @@
 
 -export([
          get_temp_file/0,
+         get_trace_file/1,
+         output_dir/1,
          rename_to_md5/1
         ]).
 
@@ -22,6 +24,13 @@ output_dir() ->
     filename:join(base_dir(), ?OUTPUT_DIR).
 output_dir(Md5) ->
     filename:join(output_dir(), Md5).
+
+get_trace_file(Md5) ->
+    filename:join(
+      [
+       output_dir(Md5),
+       io_lib:format("~s.trace", [Md5])
+      ]).
 
 get_temp_file() ->
     Name = uuid:to_string(uuid:uuid4()),
@@ -40,11 +49,7 @@ rename_to_md5(Name) ->
     Digest = crypto:hash_final(Hash1),
     Md5 = digest_to_ascii(Digest),
     file:close(Fd),
-    NewFqName =
-    filename:join([
-                   output_dir(Md5),
-                   io_lib:format("~s.trace", [Md5])
-                  ]),
+    NewFqName = get_trace_file(Md5),
     ok = filelib:ensure_dir(NewFqName),
     ok = file:rename(FqName, NewFqName),
     {ok, Md5}.

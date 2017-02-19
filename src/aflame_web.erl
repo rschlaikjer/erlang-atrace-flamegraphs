@@ -74,6 +74,7 @@ upload_trace(Req) ->
             file:close(OutFile),
             {ok, Md5} = aflame_fs:rename_to_md5(OutName),
             lager:info("Wrote new trace to ~p~n", [Md5]),
+            aflame_grapher_worker:process_trace(Md5),
             write_reply(Req1, "OK");
         {error, trace_too_large} ->
             write_reply(

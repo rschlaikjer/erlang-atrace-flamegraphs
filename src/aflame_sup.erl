@@ -38,8 +38,7 @@ init([]) ->
            {worker_module, aflame_grapher_worker},
            {size, 10}],
           []
-        ),
-    }
+        )
 	],
     {ok, { {one_for_one, 10, 10}, Children} }.
 
