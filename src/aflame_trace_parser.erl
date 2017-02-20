@@ -13,6 +13,7 @@
          get_thread_names/1,
          get_method/2,
          get_flat_profiles/1,
+         accumulate_flat_stack/2,
          get_flat_profile/2,
          test/0]).
 
@@ -63,13 +64,11 @@ get_flat_profile(Pid, ThreadName) ->
 %% Gen Server implementation
 
 init([{file, FileName}]) ->
-    lager:info("Reading trace data for file ~p~n", [FileName]),
     case file:read_file(FileName) of
         {ok, RawTrace} -> init([{binary, RawTrace}]);
         {error, Reason} -> {stop, {file_error, Reason}}
     end;
 init([{binary, RawTrace}]) ->
-    lager:info("Started parser with ~p bytes of trace data~n", [byte_size(RawTrace)]),
     {ThreadETS, MethodETS} = init_ets(),
     gen_server:cast(self(), parse_trace),
     {ok, #state{
@@ -162,7 +161,18 @@ get_profile_for_thread(State=#state{trace_records=Records}, ThreadName) ->
 accumulate_flat_stack(State, Calls) ->
     accumulate_flat_stack(State, Calls, [], [], maps:new()).
 accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
-    FlatStackMap;
+    % Fold over the map, and turn all the keys into semicolon delimited binaries
+    maps:fold(
+      fun(K, V, Acc) ->
+        maps:put(
+          binary_join(lists:reverse(K), <<";">>),
+          V,
+          Acc
+        )
+      end,
+      maps:new(),
+      FlatStackMap
+    );
 accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) ->
     MethodId = Call#call_record.method_id,
     IsMethodExit = MethodId rem 2 == 1,
@@ -204,7 +214,7 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) -
                     % need to update a parent
                     SelfAndChildTime = Call#call_record.wall_time_delta - StartFrame#call_record.wall_time_delta,
                     SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
-                    Frame = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
+                    Frame = [MethodDesc | NewNameStack],
                     {{Frame, SelfTime}, []};
                 [StartFrame|[Parent|Stack]] ->
                     % Calc elapsed from StartFrame and Call
@@ -218,7 +228,7 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) -
 
                     % StackLine = binary_join(lists:reverse([MethodDesc | TempStack]), <<";">>),
                     % StackEntry = <<StackLine/binary, " ", SampleCount/binary>>,
-                    Frame = binary_join(lists:reverse([MethodDesc | NewNameStack]), <<";">>),
+                    Frame = [MethodDesc | NewNameStack],
                     {{Frame, SelfTime}, [NewParent | Stack]}
             end
     end,
@@ -254,7 +264,6 @@ parse(State=#state{trace_data=Data}) ->
     TraceHeader = parse_trace_header(Data),
     % Load the trace records
     TraceRecords = parse_trace_records(Data, TraceHeader),
-    lager:info("Parsed ~p trace records~n", [length(TraceRecords)]),
     State#state{
       trace_records=TraceRecords
      }.

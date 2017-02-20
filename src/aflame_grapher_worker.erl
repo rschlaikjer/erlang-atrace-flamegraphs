@@ -61,13 +61,13 @@ do_process_trace(Md5) ->
     {ok, Parser} = aflame_trace_parser:start_link({file, InFile}),
     ThreadNames = aflame_trace_parser:get_thread_names(Parser),
     OutNames = lists:map(
-      fun(ThreadName) -> flatten_thread(Parser, OutPath, ThreadName) end,
-      ThreadNames
-     ),
+                 fun(ThreadName) -> flatten_thread(Parser, OutPath, ThreadName) end,
+                 ThreadNames
+                ),
     SvgNames = lists:filter(
-        fun(Name) -> Name /= undefined end,
-        OutNames
-    ),
+                 fun(Name) -> Name /= undefined end,
+                 OutNames
+                ),
     write_index_file(Md5, lists:sort(SvgNames)),
     aflame_trace_parser:close(Parser).
 
@@ -82,7 +82,7 @@ write_index_file(Md5, SvgNames) ->
                   <<"main">> ->
                       ok;
                   Name ->
-                    ok = write_svg_entry(OutFile, Md5, Name)
+                      ok = write_svg_entry(OutFile, Md5, Name)
               end
       end,
       SvgNames
@@ -96,10 +96,9 @@ write_svg_entry(OutFile, Md5, SvgName) ->
     file:write(
       OutFile,
       ["<object data='/trace/", Md5, "/", SvgName, ".svg' type='image/svg+xml'></object><br/>"]
-    ).
+     ).
 
 flatten_thread(Parser, OutPath, ThreadName) ->
-    lager:info("Flattening thread: ~p~n", [ThreadName]),
     Profile = aflame_trace_parser:get_flat_profile(Parser, ThreadName),
     case maps:size(Profile) of
         0 -> undefined;
@@ -109,27 +108,25 @@ flatten_thread(Parser, OutPath, ThreadName) ->
     end.
 
 write_thread(Profile, OutPath, ThreadName) ->
-    OutBinary = maps:fold(
-                  fun(K, V, Acc) ->
-                          VBin = integer_to_binary(V),
-                          <<K/binary, " ", VBin/binary, "\n", Acc/binary>>
-                  end,
-                  <<"">>,
-                  Profile
-                 ),
     OutName = binary:replace(
                 ThreadName,
                 [<<"/">>, <<" ">>, <<"#">>],
                 <<".">>,
                 [global]
-            ),
+               ),
     OutFile = <<OutPath/binary, "/", OutName/binary, ".flat">>,
-    GraphFile = <<OutPath/binary, "/", OutName/binary, ".svg">>,
-    lager:info("Start writing output file ~s~n", [OutFile]),
     {ok, File} = file:open(OutFile, [write]),
     file:truncate(File),
-    file:write(File, OutBinary),
-    lager:info("Finished writing ~s~n", [OutFile]),
+    maps:map(
+      fun(K, V) ->
+              VBin = integer_to_binary(V),
+              Line = <<K/binary, " ", VBin/binary, "\n">>,
+              file:write(File, Line)
+      end,
+      Profile
+     ),
+    file:close(File),
+    GraphFile = <<OutPath/binary, "/", OutName/binary, ".svg">>,
     GraphCmd = lists:join(
                  " ",
                  [
