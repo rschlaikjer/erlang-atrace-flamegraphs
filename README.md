@@ -12,6 +12,8 @@ A copy of this server is hosted at https://aflame.rhye.org/
 
 An example trace file from the `onCreate` of a simple recipe app can be seen [here](https://aflame.rhye.org/trace/612054F4E2322B45066E3A882ABD51FB)
 
+![onCreate](/main.png?raw=true "Main thread")
+
 ## Android Trace file format
 There doesn't seem to be much documentation around the Android .trace files, but from what I can tell they are organized as such:
 
