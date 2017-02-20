@@ -17,7 +17,8 @@ start() ->
     Dispatch = cowboy_router:compile(
                  [
                   {'_', [
-                         {"/", cowboy_static, {priv_file, aflame, "index.html"}},
+                         {"/", cowboy_static, {priv_file, aflame, "static/index.html"}},
+                         {"/static/[...]", cowboy_static, {priv_dir, aflame, "static"}},
                          {'_', ?MODULE, []}
                         ]}
                  ]),
@@ -82,25 +83,34 @@ view_trace(Req, Trace) ->
                           aflame_fs:output_dir(Trace),
                           "index.html"
                          ),
-            F = fun (Socket, Transport) ->
-                        Transport:sendfile(Socket, IndexFile)
-                end,
-            Req2 = cowboy_req:set_resp_body_fun(F, Req),
-            cowboy_req:reply(
-              200,
-              [{"content-type", "text/html; encoding=utf-8"}],
-              Req2
-            )
+            case filelib:is_file(IndexFile) of
+                false ->
+                    reply_file(Req, "priv/static/processing.html");
+                true ->
+                    reply_file(Req, IndexFile)
+            end
     end.
+
+
+reply_file(Req, FileName) ->
+    F = fun (Socket, Transport) ->
+                Transport:sendfile(Socket, FileName)
+        end,
+    Req2 = cowboy_req:set_resp_body_fun(F, Req),
+    cowboy_req:reply(
+      200,
+      [{"content-type", "text/html; encoding=utf-8"}],
+      Req2
+     ).
 
 view_svg(Req, Trace, Svg) ->
     case aflame_fs:trace_exists(Trace) of
         false -> write_reply(Req, "Trace not found", 404);
         true ->
             File = filename:join(
-                          aflame_fs:output_dir(Trace),
-                          Svg
-                         ),
+                     aflame_fs:output_dir(Trace),
+                     Svg
+                    ),
             F = fun (Socket, Transport) ->
                         Transport:sendfile(Socket, File)
                 end,
@@ -109,7 +119,7 @@ view_svg(Req, Trace, Svg) ->
               200,
               [{"content-type", "image/svg+xml; encoding=utf-8"}],
               Req2
-            )
+             )
     end.
 
 upload_trace(Req) ->

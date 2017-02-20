@@ -53,7 +53,6 @@ get_temp_file() ->
 rename_to_md5(Name) ->
     FqName = filename:join(temp_dir(), Name),
     Hash = crypto:hash_init(md5),
-    lager:info("Hashing input file ~p~n", [FqName]),
     {ok, Fd} = file:open(FqName, [read]),
     {ok, Hash1} = hash_file(Fd, Hash),
     Digest = crypto:hash_final(Hash1),
@@ -61,12 +60,14 @@ rename_to_md5(Name) ->
     file:close(Fd),
     NewFqName = get_trace_file(Md5),
     ok = filelib:ensure_dir(NewFqName),
-    ok = file:rename(FqName, NewFqName),
-    file:write_file(
-      get_trace_index(Md5),
-      <<"<meta http-equiv=\"refresh\" content=\"5\"><center><h1>Processing Trace</h1></center>">>,
-      [write]
-    ),
+    % If the target already exists, then we already processed this file,
+    % no need to do it again
+    case filelib:is_file(NewFqName) of
+        false ->
+            ok = file:rename(FqName, NewFqName);
+        true ->
+            ok
+    end,
     {ok, Md5}.
 
 hash_file(Fd, Hash) ->

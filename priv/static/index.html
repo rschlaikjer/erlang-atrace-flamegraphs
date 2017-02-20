@@ -1,0 +1,27 @@
+<html>
+    <head>
+        <style>
+.centered {
+    position: fixed;
+    top: 25%;
+    left: 50%;
+    /* bring your own prefixes */
+    transform: translate(-50%, -50%);
+}
+        </style>
+    </head>
+    <div class="centered">
+        <center>
+            <img width="100px" src="/static/aflame.png">
+            <h1> AFlame </h1>
+            <h2> Android Trace file to flamegraph converter </h2>
+        </center>
+        <p>
+        To gather traces, use the <a href="https://developer.android.com/reference/android/os/Debug.html#startMethodTracing(java.lang.String, int, int)">Debug#{start,stop}MethodTracing</a> calls to generate a trace file.
+        </p>
+        <form action="/upload_trace" method="post" enctype="multipart/form-data">
+            <input type="file" name="trace_file" accept="*">
+            <input type="submit" value="Upload">
+        </form>
+    </div>
+</html>
