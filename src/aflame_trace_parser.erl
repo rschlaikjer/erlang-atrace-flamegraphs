@@ -165,7 +165,7 @@ accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
     maps:fold(
       fun(K, V, Acc) ->
         maps:put(
-          binary_join(lists:reverse(K), <<";">>),
+          rev_binary_join(K, <<";">>),
           V,
           Acc
         )
@@ -247,8 +247,8 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) -
 
     accumulate_flat_stack(State, Calls, NewTempStack, NewNameStack, NewStackMap).
 
-binary_join(BinList, Separator) ->
-    lists:foldr(
+rev_binary_join(BinList, Separator) ->
+    lists:foldl(
       fun(BinA, BinB) ->
               <<BinA/binary, Separator/binary, BinB/binary>>
       end,
