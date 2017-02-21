@@ -107,6 +107,18 @@ flatten_thread(Parser, OutPath, ThreadName) ->
             OutName
     end.
 
+profile_to_iolist(Profile) ->
+    Res = maps:fold(
+      fun (K, V, Acc) ->
+          VBin = integer_to_binary(V),
+          KList = lists:map(fun(K1) -> [K1|";"] end, K),
+          [KList, " ", VBin, "\n", Acc]
+      end,
+      [],
+      Profile
+    ),
+    Res.
+
 write_thread(Profile, OutPath, ThreadName) ->
     OutName = binary:replace(
                 ThreadName,
@@ -117,14 +129,7 @@ write_thread(Profile, OutPath, ThreadName) ->
     OutFile = <<OutPath/binary, "/", OutName/binary, ".flat">>,
     {ok, File} = file:open(OutFile, [write]),
     file:truncate(File),
-    maps:map(
-      fun(K, V) ->
-              VBin = integer_to_binary(V),
-              Line = <<K/binary, " ", VBin/binary, "\n">>,
-              file:write(File, Line)
-      end,
-      Profile
-     ),
+    file:write(File, profile_to_iolist(Profile)),
     file:close(File),
     GraphFile = <<OutPath/binary, "/", OutName/binary, ".svg">>,
     GraphCmd = lists:join(

@@ -23,7 +23,7 @@ start() ->
                         ]}
                  ]),
     {ok, _} = cowboy:start_http(
-                http, 10, [{port, Port}], [{env, [{dispatch, Dispatch}]}]
+                http, 100, [{port, Port}], [{env, [{dispatch, Dispatch}]}]
                ),
     ok.
 

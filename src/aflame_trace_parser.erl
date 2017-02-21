@@ -165,7 +165,7 @@ accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
     maps:fold(
       fun(K, V, Acc) ->
         maps:put(
-          rev_binary_join(K, <<";">>),
+          lists:reverse(K),
           V,
           Acc
         )
@@ -173,14 +173,28 @@ accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
       maps:new(),
       FlatStackMap
     );
+   % lager:info("Refolding ~p map keys down...~n", [maps:size(FlatStackMap)]),
+   % maps:fold(
+   %   fun(K, V, Acc) ->
+   %     maps:put(
+   %       rev_binary_join(K, <<";">>),
+   %       V,
+   %       Acc
+   %     )
+   %   end,
+   %   maps:new(),
+   %   FlatStackMap
+   % );
 accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) ->
     MethodId = Call#call_record.method_id,
     IsMethodExit = MethodId rem 2 == 1,
     Method = case get_method_by_id(State, MethodId - (MethodId rem 2)) of
-                 not_found -> #trace_method{
-                                 class_name = <<"?Class">>,
-                                 method_name = <<"?Method">>
-                                };
+                 not_found ->
+                     MethodIdBin = integer_to_binary(MethodId),
+                     #trace_method{
+                         class_name = <<"?Class">>,
+                         method_name = <<"?Method<", MethodIdBin/binary, ">">>
+                        };
                  M -> M
              end,
     ClassName = Method#trace_method.class_name,
