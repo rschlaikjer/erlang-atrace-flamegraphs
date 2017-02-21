@@ -1,6 +1,6 @@
 -module(aflame_web).
 -define(HTTP_CHUNK_SIZE, 1048576).
--define(MAX_TRACE_SIZE, 33554432).
+-define(MAX_TRACE_SIZE, 134217728).
 
 -export([
          start/0,
