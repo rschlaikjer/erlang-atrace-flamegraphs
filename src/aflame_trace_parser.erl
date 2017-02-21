@@ -47,13 +47,13 @@ close(Pid) ->
     gen_server:stop(Pid).
 
 get_thread_names(Pid) ->
-    gen_server:call(Pid, get_thread_names).
+    gen_server:call(Pid, get_thread_names, ?TIMEOUT).
 
 get_thread(Pid, ThreadId) ->
-    gen_server:call(Pid, {get_thread, ThreadId}).
+    gen_server:call(Pid, {get_thread, ThreadId}, ?TIMEOUT).
 
 get_method(Pid, MethodId) ->
-    gen_server:call(Pid, {get_method, MethodId}).
+    gen_server:call(Pid, {get_method, MethodId}, ?TIMEOUT).
 
 get_flat_profiles(Pid) ->
     gen_server:call(Pid, {get_flat_profile, all}, ?TIMEOUT).
