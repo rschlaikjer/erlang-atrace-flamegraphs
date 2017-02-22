@@ -10,7 +10,7 @@
 -export([start_link/1,
          close/1,
          get_thread/2,
-         get_thread_names/1,
+         get_thread_ids/1,
          get_method/2,
          get_flat_profiles/1,
          accumulate_flat_stack/2,
@@ -46,8 +46,8 @@ test() ->
 close(Pid) ->
     gen_server:stop(Pid).
 
-get_thread_names(Pid) ->
-    gen_server:call(Pid, get_thread_names, ?TIMEOUT).
+get_thread_ids(Pid) ->
+    gen_server:call(Pid, get_thread_ids, ?TIMEOUT).
 
 get_thread(Pid, ThreadId) ->
     gen_server:call(Pid, {get_thread, ThreadId}, ?TIMEOUT).
@@ -58,8 +58,8 @@ get_method(Pid, MethodId) ->
 get_flat_profiles(Pid) ->
     gen_server:call(Pid, {get_flat_profile, all}, ?TIMEOUT).
 
-get_flat_profile(Pid, ThreadName) ->
-    gen_server:call(Pid, {get_flat_profile, {thread_name, ThreadName}}, ?TIMEOUT).
+get_flat_profile(Pid, ThreadId) ->
+    gen_server:call(Pid, {get_flat_profile, {thread_id, ThreadId}}, ?TIMEOUT).
 
 %% Gen Server implementation
 
@@ -79,8 +79,8 @@ init([{binary, RawTrace}]) ->
 
 handle_call({get_thread, Id}, _From, State) ->
     {reply, get_thread_by_id(State, Id), State};
-handle_call(get_thread_names, _From, State) ->
-    {reply, all_thread_names(State), State};
+handle_call(get_thread_ids, _From, State) ->
+    {reply, all_thread_ids(State), State};
 handle_call({get_method, Id}, _From, State) ->
     {reply, get_method_by_id(State, Id), State};
 handle_call({get_flat_profile, all}, _From, State) ->
@@ -88,8 +88,8 @@ handle_call({get_flat_profile, all}, _From, State) ->
     {reply, [
              get_profile_for_thread(State, Name)
              || Name <- ThreadNames], State};
-handle_call({get_flat_profile, {thread_name, Thread}}, _From, State) ->
-    {reply, get_profile_for_thread(State, Thread), State};
+handle_call({get_flat_profile, {thread_id, ThreadId}}, _From, State) ->
+    {reply, get_profile_for_thread(State, ThreadId), State};
 handle_call(Request, From, State) ->
     lager:info("Call ~p From ~p", [Request, From]),
     {reply, ignored, State}.
@@ -130,15 +130,11 @@ get_thread_by_id(#state{ets_threads=Ets}, Id) when is_integer(Id) ->
         [] -> not_found
     end.
 
-get_thread_by_name(State=#state{ets_threads=Ets}, Name) when is_binary(Name) ->
-    case ets:match(Ets, #trace_thread{thread_name=Name, thread_id='$1'}) of
-        [[ThreadId]|_ThreadIds] -> get_thread_by_id(State, ThreadId);
-        [[ThreadId]] -> get_thread_by_id(State, ThreadId);
-        [] -> not_found
-    end.
-
 all_thread_names(#state{ets_threads=Ets}) ->
     [Name || [Name] <- ets:match(Ets, #trace_thread{thread_name='$1', _='_'})].
+
+all_thread_ids(#state{ets_threads=Ets}) ->
+    [Id || [Id] <- ets:match(Ets, #trace_thread{thread_id='$1', _='_'})].
 
 add_method_record(#state{ets_methods=Ets}, Method=#trace_method{}) ->
     ets:insert(Ets, Method).
@@ -149,8 +145,8 @@ get_method_by_id(#state{ets_methods=Ets}, Id) when is_integer(Id) ->
         [] -> not_found
     end.
 
-get_profile_for_thread(State=#state{trace_records=Records}, ThreadName) ->
-    Thread = get_thread_by_name(State, ThreadName),
+get_profile_for_thread(State=#state{trace_records=Records}, ThreadId) ->
+    Thread = get_thread_by_id(State, ThreadId),
     ThreadCalls = [
                    Record || Record <- Records,
                              Record#call_record.thread_id == Thread#trace_thread.thread_id
@@ -173,18 +169,6 @@ accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
       maps:new(),
       FlatStackMap
     );
-   % lager:info("Refolding ~p map keys down...~n", [maps:size(FlatStackMap)]),
-   % maps:fold(
-   %   fun(K, V, Acc) ->
-   %     maps:put(
-   %       rev_binary_join(K, <<";">>),
-   %       V,
-   %       Acc
-   %     )
-   %   end,
-   %   maps:new(),
-   %   FlatStackMap
-   % );
 accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) ->
     MethodId = Call#call_record.method_id,
     IsMethodExit = MethodId rem 2 == 1,
@@ -260,15 +244,6 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) -
     end,
 
     accumulate_flat_stack(State, Calls, NewTempStack, NewNameStack, NewStackMap).
-
-rev_binary_join(BinList, Separator) ->
-    lists:foldl(
-      fun(BinA, BinB) ->
-              <<BinA/binary, Separator/binary, BinB/binary>>
-      end,
-      <<"">>,
-      BinList
-     ).
 
 parse(State=#state{trace_data=Data}) ->
     % Load threads, methods into ETS

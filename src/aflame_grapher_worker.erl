@@ -2,6 +2,7 @@
 -behaviour(gen_server).
 -behaviour(poolboy_worker).
 
+-include("include/records.hrl").
 -compile([{parse_transform, lager_transform}]).
 
 -export([
@@ -59,10 +60,10 @@ do_process_trace(Md5) ->
     InFile = aflame_fs:get_trace_file(Md5),
     OutPath = list_to_binary(aflame_fs:output_dir(Md5)),
     {ok, Parser} = aflame_trace_parser:start_link({file, InFile}),
-    ThreadNames = aflame_trace_parser:get_thread_names(Parser),
+    ThreadIds = aflame_trace_parser:get_thread_ids(Parser),
     OutNames = lists:map(
-                 fun(ThreadName) -> flatten_thread(Parser, OutPath, ThreadName) end,
-                 ThreadNames
+                 fun(ThreadId) -> flatten_thread(Parser, OutPath, ThreadId) end,
+                 ThreadIds
                 ),
     SvgNames = lists:filter(
                  fun(Name) -> Name /= undefined end,
@@ -74,16 +75,9 @@ do_process_trace(Md5) ->
 write_index_file(Md5, SvgNames) ->
     {ok, OutFile} = file:open(aflame_fs:get_trace_index(Md5), [write]),
     ok = file:write(OutFile, ["<center><h1>", Md5, "</h1><br/>"]),
-    % Always put the main thread at the top
-    ok = write_svg_entry(OutFile, Md5, "main"),
     lists:map(
       fun (SvgName) ->
-              case SvgName of
-                  <<"main">> ->
-                      ok;
-                  Name ->
-                      ok = write_svg_entry(OutFile, Md5, Name)
-              end
+          ok = write_svg_entry(OutFile, Md5, SvgName)
       end,
       SvgNames
      ),
@@ -98,12 +92,12 @@ write_svg_entry(OutFile, Md5, SvgName) ->
       ["<object data='/trace/", Md5, "/", SvgName, ".svg' type='image/svg+xml'></object><br/>"]
      ).
 
-flatten_thread(Parser, OutPath, ThreadName) ->
-    Profile = aflame_trace_parser:get_flat_profile(Parser, ThreadName),
+flatten_thread(Parser, OutPath, ThreadId) ->
+    Profile = aflame_trace_parser:get_flat_profile(Parser, ThreadId),
     case maps:size(Profile) of
         0 -> undefined;
         _ ->
-            {ok, OutName} = write_thread(Profile, OutPath, ThreadName),
+            {ok, OutName} = write_thread(Parser, Profile, OutPath, ThreadId),
             OutName
     end.
 
@@ -119,19 +113,16 @@ profile_to_iolist(Profile) ->
     ),
     Res.
 
-write_thread(Profile, OutPath, ThreadName) ->
-    OutName = binary:replace(
-                ThreadName,
-                [<<"/">>, <<" ">>, <<"#">>],
-                <<".">>,
-                [global]
-               ),
-    OutFile = <<OutPath/binary, "/", OutName/binary, ".flat">>,
+write_thread(Parser, Profile, OutPath, ThreadId) ->
+    #trace_thread{thread_name=ThreadName} =
+        aflame_trace_parser:get_thread(Parser, ThreadId),
+    ThreadIdBin = integer_to_binary(ThreadId),
+    OutFile = <<OutPath/binary, "/", ThreadIdBin/binary, ".flat">>,
     {ok, File} = file:open(OutFile, [write]),
     file:truncate(File),
     file:write(File, profile_to_iolist(Profile)),
     file:close(File),
-    GraphFile = <<OutPath/binary, "/", OutName/binary, ".svg">>,
+    GraphFile = <<OutPath/binary, "/", ThreadIdBin/binary, ".svg">>,
     GraphCmd = lists:join(
                  " ",
                  [
@@ -143,7 +134,7 @@ write_thread(Profile, OutPath, ThreadName) ->
                  ]
                 ),
     _Ret = os:cmd(GraphCmd),
-    {ok, OutName}.
+    {ok, ThreadIdBin}.
 
 quote_string(String) ->
     io_lib:format("'~s'", [String]).
