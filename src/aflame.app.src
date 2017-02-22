@@ -7,6 +7,8 @@
    [kernel,
     lager,
     cowboy,
+    poolboy,
+    uuid,
     stdlib
    ]},
   {env,[]},
