@@ -9,7 +9,8 @@
     cowboy,
     poolboy,
     uuid,
-    stdlib
+    stdlib,
+    runtime_tools
    ]},
   {env,[]},
   {modules, []},
