@@ -18,7 +18,8 @@
           class_name :: binary(),
           method_name :: binary(),
           signature :: binary(),
-          source_file :: binary()
+          source_file :: binary(),
+          line_number :: pos_integer()
          }).
 
 -record(records_header, {

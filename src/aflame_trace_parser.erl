@@ -388,7 +388,21 @@ parse_method_line(Line) ->
                class_name=ClassName,
                method_name=MethodName,
                signature=Signature,
-               source_file=Source
+               source_file=Source,
+               line_number=0
+              };
+        [MethodHex, ClassName, MethodName, Signature, Source, SourceLine] ->
+            MethodId = erlang:binary_to_integer(
+                         binary:part(MethodHex, {2, byte_size(MethodHex)-2}),
+                         16
+                        ),
+            #trace_method{
+               method_id=MethodId,
+               class_name=ClassName,
+               method_name=MethodName,
+               signature=Signature,
+               source_file=Source,
+               line_number=SourceLine
               };
         Other -> Other
     end.
