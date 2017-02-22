@@ -85,7 +85,7 @@ view_trace(Req, Trace) ->
                          ),
             case filelib:is_file(IndexFile) of
                 false ->
-                    reply_file(Req, "priv/static/processing.html");
+                    reply_file(Req, "static/processing.html");
                 true ->
                     reply_file(Req, IndexFile)
             end
@@ -93,8 +93,10 @@ view_trace(Req, Trace) ->
 
 
 reply_file(Req, FileName) ->
+    PrivDir = code:priv_dir(aflame),
+    QualifiedFileName = filename:join(PrivDir, FileName),
     F = fun (Socket, Transport) ->
-                Transport:sendfile(Socket, FileName)
+                Transport:sendfile(Socket, QualifiedFileName)
         end,
     Req2 = cowboy_req:set_resp_body_fun(F, Req),
     cowboy_req:reply(
