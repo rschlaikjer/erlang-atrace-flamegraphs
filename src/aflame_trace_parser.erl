@@ -185,15 +185,20 @@ accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
      );
 accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) ->
     MethodId = Call#call_record.method_id,
-    CallAction = Call#call_record.method_action,
+    CallAction = case Call#call_record.method_action of
+                     enter -> enter;
+                     exit -> exit;
+                     unwind ->
+                         % When ART unwinds, it looks like it actually behaves
+                         % the same as a return, so treat it as such here.
+                         exit
+                 end,
     MethodDesc = get_desc_for_method(State, MethodId),
 
     NewNameStack =
     case CallAction of
         % If this is a method entry, push the method name on our call stack
         enter -> [MethodDesc|NameStack];
-        % For unwinds, unwind all the way since we don't know anything else
-        unwind -> [];
         % For method exits, pop the topmost name if we can
         exit -> case NameStack of
                     [] -> [];
@@ -205,16 +210,6 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) -
     case CallAction of
         % If this is the entry of a method, then just push it to our running stack.
         enter -> {undefined, [Call|TempStack]};
-        % Unwind records don't say how far they unwind - log the time spent in
-        % the methods currently on the stack, and then drop it
-        unwind ->
-            Entries = trace_stack_unwind(
-                        State,
-                        Call#call_record.wall_time_delta,
-                        TempStack,
-                        NameStack
-                       ),
-            {Entries, []};
         % On method exit, use the entry point of the call to calculate how much
         % time we + our callees consumed. Then add our total time from our
         % parent's child_time field, if we have a parent, and push a flat stack
@@ -274,39 +269,6 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) -
     end,
 
     accumulate_flat_stack(State, Calls, NewTempStack, NewNameStack, NewStackMap).
-
-trace_stack_unwind(State, Time, CallStack, NameStack) ->
-    trace_stack_unwind(State, Time, CallStack, NameStack, []).
-trace_stack_unwind(_State, _Time, [], [], StackEntriesAcc) ->
-    StackEntriesAcc;
-trace_stack_unwind(State, Time, [StartFrame|[]], NameStack, StackEntriesAcc) ->
-    SelfAndChildTime = Time - StartFrame#call_record.wall_time_delta,
-    SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
-    MethodDesc = get_desc_for_method(State, StartFrame#call_record.method_id),
-    trace_stack_unwind(
-      State,
-      Time,
-      [],
-      [],
-      [{[MethodDesc | NameStack], SelfTime}|StackEntriesAcc]
-     );
-trace_stack_unwind(State, Time, [StartFrame|[Parent|Stack]], [_Name|NameStack], StackEntriesAcc) ->
-    SelfAndChildTime = Time - StartFrame#call_record.wall_time_delta,
-    SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
-    MethodDesc = get_desc_for_method(State, StartFrame#call_record.method_id),
-
-    % Update the parent frame with how long this child took
-    NewParent = Parent#call_record{
-                  child_time = Parent#call_record.child_time + SelfAndChildTime
-                 },
-
-    trace_stack_unwind(
-      State,
-      Time,
-      [NewParent|Stack],
-      NameStack,
-      [{[MethodDesc | NameStack], SelfTime}|StackEntriesAcc]
-     ).
 
 parse(State=#state{trace_data=Data}) ->
     % Load threads, methods into ETS
