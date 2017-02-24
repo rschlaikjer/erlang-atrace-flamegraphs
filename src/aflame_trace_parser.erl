@@ -154,55 +154,72 @@ get_profile_for_thread(State=#state{trace_records=Records}, ThreadId) ->
     FlatStack = accumulate_flat_stack(State, ThreadCalls),
     FlatStack.
 
+get_desc_for_method(State, MethodId) ->
+    Method = case get_method_by_id(State, MethodId) of
+                 not_found ->
+                     MethodIdBin = integer_to_binary(MethodId),
+                     #trace_method{
+                        class_name = <<"?Class">>,
+                        method_name = <<"?Method<", MethodIdBin/binary, ">">>
+                       };
+                 M -> M
+             end,
+    ClassName = Method#trace_method.class_name,
+    MethodName = Method#trace_method.method_name,
+    <<ClassName/binary, "#", MethodName/binary>>.
+
 accumulate_flat_stack(State, Calls) ->
     accumulate_flat_stack(State, Calls, [], [], maps:new()).
 accumulate_flat_stack(_State, [], _TempStack, _NameStack, FlatStackMap) ->
     % Fold over the map, and turn all the keys into semicolon delimited binaries
     maps:fold(
       fun(K, V, Acc) ->
-        maps:put(
-          lists:reverse(K),
-          V,
-          Acc
-        )
+              maps:put(
+                lists:reverse(K),
+                V,
+                Acc
+               )
       end,
       maps:new(),
       FlatStackMap
-    );
+     );
 accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) ->
     MethodId = Call#call_record.method_id,
-    IsMethodExit = MethodId rem 2 == 1,
-    Method = case get_method_by_id(State, MethodId - (MethodId rem 2)) of
-                 not_found ->
-                     MethodIdBin = integer_to_binary(MethodId),
-                     #trace_method{
-                         class_name = <<"?Class">>,
-                         method_name = <<"?Method<", MethodIdBin/binary, ">">>
-                        };
-                 M -> M
-             end,
-    ClassName = Method#trace_method.class_name,
-    MethodName = Method#trace_method.method_name,
-    MethodDesc = <<ClassName/binary, "#", MethodName/binary>>,
+    CallAction = Call#call_record.method_action,
+    MethodDesc = get_desc_for_method(State, MethodId),
 
     NewNameStack =
-    case IsMethodExit of
-        false -> [MethodDesc|NameStack];
-        true -> case NameStack of
+    case CallAction of
+        % If this is a method entry, push the method name on our call stack
+        enter -> [MethodDesc|NameStack];
+        % For unwinds, unwind all the way since we don't know anything else
+        unwind -> [];
+        % For method exits, pop the topmost name if we can
+        exit -> case NameStack of
                     [] -> [];
                     [_OurName|Others] -> Others
                 end
     end,
 
     {StackEntry, NewTempStack} =
-    case IsMethodExit of
+    case CallAction of
         % If this is the entry of a method, then just push it to our running stack.
-        false -> {undefined, [Call|TempStack]};
+        enter -> {undefined, [Call|TempStack]};
+        % Unwind records don't say how far they unwind - log the time spent in
+        % the methods currently on the stack, and then drop it
+        unwind ->
+            Entries = trace_stack_unwind(
+                        State,
+                        Call#call_record.wall_time_delta,
+                        TempStack,
+                        NameStack
+                       ),
+            {Entries, []};
         % On method exit, use the entry point of the call to calculate how much
         % time we + our callees consumed. Then add our total time from our
         % parent's child_time field, if we have a parent, and push a flat stack
         % entry onto the list
-        true ->
+        exit ->
             case TempStack of
                 % The beginning of the trace can have
                 % methods with no entry
@@ -240,10 +257,56 @@ accumulate_flat_stack(State, [Call|Calls], TempStack, NameStack, FlatStackMap) -
               fun (OldTime) -> OldTime + Time end,
               Time,
               FlatStackMap
+             );
+        StackEntries when is_list(StackEntries) ->
+            lists:foldl(
+              fun({StackLine, Time}, Map) ->
+                      maps:update_with(
+                        StackLine,
+                        fun (OldTime) -> OldTime + Time end,
+                        Time,
+                        Map
+                       )
+              end,
+              FlatStackMap,
+              StackEntries
              )
     end,
 
     accumulate_flat_stack(State, Calls, NewTempStack, NewNameStack, NewStackMap).
+
+trace_stack_unwind(State, Time, CallStack, NameStack) ->
+    trace_stack_unwind(State, Time, CallStack, NameStack, []).
+trace_stack_unwind(_State, _Time, [], [], StackEntriesAcc) ->
+    StackEntriesAcc;
+trace_stack_unwind(State, Time, [StartFrame|[]], NameStack, StackEntriesAcc) ->
+    SelfAndChildTime = Time - StartFrame#call_record.wall_time_delta,
+    SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
+    MethodDesc = get_desc_for_method(State, StartFrame#call_record.method_id),
+    trace_stack_unwind(
+      State,
+      Time,
+      [],
+      [],
+      [{[MethodDesc | NameStack], SelfTime}|StackEntriesAcc]
+     );
+trace_stack_unwind(State, Time, [StartFrame|[Parent|Stack]], [_Name|NameStack], StackEntriesAcc) ->
+    SelfAndChildTime = Time - StartFrame#call_record.wall_time_delta,
+    SelfTime = SelfAndChildTime - StartFrame#call_record.child_time,
+    MethodDesc = get_desc_for_method(State, StartFrame#call_record.method_id),
+
+    % Update the parent frame with how long this child took
+    NewParent = Parent#call_record{
+                  child_time = Parent#call_record.child_time + SelfAndChildTime
+                 },
+
+    trace_stack_unwind(
+      State,
+      Time,
+      [NewParent|Stack],
+      NameStack,
+      [{[MethodDesc | NameStack], SelfTime}|StackEntriesAcc]
+     ).
 
 parse(State=#state{trace_data=Data}) ->
     % Load threads, methods into ETS
@@ -290,11 +353,31 @@ parse_trace_records(Data, Header=#records_header{}) ->
     ParsedRecords.
 
 parse_trace_record(Record) ->
-    <<ThreadId:2/binary, MethodId:4/binary,
+    <<ThreadId:2/binary, MethodIdActionBin:4/binary,
       TimeDelta:4/binary, WallTimeDelta:4/binary>> = Record,
+    %%
+    %% The 'method id' part of the trace is actually the method ID plus
+    %% the action that is being logged.
+    %% All bits save the lower two bits are the method ID, the lower
+    %% two bits are the action. See the Art source for reference:
+    %% https://android.googlesource.com/platform/art/+/master/runtime/trace.h#88
+
+    % Parse the hex number (why hex google!?)
+    MethodIdAction = binary:decode_unsigned(MethodIdActionBin, little),
+    % Method ID is top 14 bits
+    % Don't bother shifting it down, as the method header also shifts it.
+    MethodId = MethodIdAction band 16#FFFC,
+    % Method action is lower two bits
+    MethodAction = case MethodIdAction band 16#0003 of
+                       16#00 -> enter;
+                       16#01 -> exit;
+                       16#02 -> unwind
+                   end,
+
     #call_record{
        thread_id=binary:decode_unsigned(ThreadId, little),
-       method_id=binary:decode_unsigned(MethodId, little),
+       method_id=MethodId,
+       method_action=MethodAction,
        time_delta=binary:decode_unsigned(TimeDelta, little),
        wall_time_delta=binary:decode_unsigned(WallTimeDelta, little),
        child_time=0
@@ -354,33 +437,26 @@ parse_method_line(Line) ->
     LineParts = binary:split(Line, <<"\t">>, [global]),
     case LineParts of
         [MethodHex, ClassName, MethodName, Signature, Source] ->
-            MethodId = erlang:binary_to_integer(
-                         binary:part(MethodHex, {2, byte_size(MethodHex)-2}),
-                         16
-                        ),
-            #trace_method{
-               method_id=MethodId,
-               class_name=ClassName,
-               method_name=MethodName,
-               signature=Signature,
-               source_file=Source,
-               line_number=0
-              };
+            new_method_record(MethodHex, ClassName, MethodName, Signature, Source);
         [MethodHex, ClassName, MethodName, Signature, Source, SourceLine] ->
-            MethodId = erlang:binary_to_integer(
-                         binary:part(MethodHex, {2, byte_size(MethodHex)-2}),
-                         16
-                        ),
-            #trace_method{
-               method_id=MethodId,
-               class_name=ClassName,
-               method_name=MethodName,
-               signature=Signature,
-               source_file=Source,
-               line_number=SourceLine
-              };
-        Other -> Other
+            new_method_record(MethodHex, ClassName, MethodName, Signature, Source, SourceLine)
     end.
+
+new_method_record(MethodHex, ClassName, MethodName, Signature, SourceFile) ->
+    new_method_record(MethodHex, ClassName, MethodName, Signature, SourceFile, 0).
+new_method_record(MethodHex, ClassName, MethodName, Signature, SourceFile, SourceLine) ->
+    MethodId = erlang:binary_to_integer(
+                 binary:part(MethodHex, {2, byte_size(MethodHex)-2}),
+                 16
+                ),
+    #trace_method{
+       method_id=MethodId,
+       class_name=ClassName,
+       method_name=MethodName,
+       signature=Signature,
+       source_file=SourceFile,
+       line_number=SourceLine
+      }.
 
 excerpt_binary(Data, StartKey, EndKey) ->
     {StartKeyPos, StartKeyLen} = binary:match(Data, StartKey),

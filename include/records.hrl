@@ -33,6 +33,7 @@
 -record(call_record, {
           thread_id :: pos_integer(),
           method_id :: pos_integer(),
+          method_action :: 'enter' | 'exit' | 'unwind',
           time_delta :: pos_integer(),
           wall_time_delta :: pos_integer(),
           child_time :: pos_integer()
