@@ -25,6 +25,15 @@ have any traces yet, you can take a look at a sample trace from a recipe app
 
 ![onCreate](/main.png?raw=true "Main thread")
 
+To run a local copy of AFlame (with [rebar](http://www.rebar3.org/)):
+
+    git clone git@github.com:rschlaikjer/erlang-atrace-flamegraphs.git aflame
+    cd aflame
+    # Update files/app.config to use a port and trace output location that suit
+    rebar3 as prod shell
+    # Open it up in your browser
+    xdg-open http://localhost:8192/
+
 ## Android Trace file format
 The information here is based on the ART implementation of tracing, which can be viewed here:
 https://android.googlesource.com/platform/art/+/master/runtime/trace.cc
