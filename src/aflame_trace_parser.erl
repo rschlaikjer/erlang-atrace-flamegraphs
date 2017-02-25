@@ -328,9 +328,9 @@ parse_trace_record(Record) ->
     MethodIdAction = binary:decode_unsigned(MethodIdActionBin, little),
     % Method ID is top 14 bits
     % Don't bother shifting it down, as the method header also shifts it.
-    MethodId = MethodIdAction band 16#FFFC,
+    MethodId = MethodIdAction band 16#FFFFFFFC,
     % Method action is lower two bits
-    MethodAction = case MethodIdAction band 16#0003 of
+    MethodAction = case MethodIdAction band 16#00000003 of
                        16#00 -> enter;
                        16#01 -> exit;
                        16#02 -> unwind
