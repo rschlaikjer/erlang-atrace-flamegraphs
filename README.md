@@ -23,6 +23,9 @@ file to https://aflame.rhye.org/ and get a result pretty quickly. If you don't
 have any traces yet, you can take a look at a sample trace from a recipe app
 [here](https://aflame.rhye.org/trace/612054F4E2322B45066E3A882ABD51FB)
 
+I have posted in depth about the Android trace format
+[here](https://blog.rhye.org/post/android-profiling-flamegraphs/).
+
 ![onCreate](/main.png?raw=true "Main thread")
 
 To run a local copy of AFlame (with [rebar](http://www.rebar3.org/)):
@@ -30,7 +33,7 @@ To run a local copy of AFlame (with [rebar](http://www.rebar3.org/)):
     git clone git@github.com:rschlaikjer/erlang-atrace-flamegraphs.git aflame
     cd aflame
     # Update files/app.config to use a port and trace output location that suit
-    rebar3 as prod shell
+    ERL_FLAGS="-config files/app.config" rebar3 shell
     # Open it up in your browser
     xdg-open http://localhost:8192/
 
