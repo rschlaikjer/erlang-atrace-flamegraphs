@@ -130,11 +130,19 @@ write_thread(Parser, Profile, OutPath, ThreadId) ->
                   "--title", quote_string(ThreadName),
                   "--hash",
                   "--countname", "microseconds",
-                  quote_string(OutFile), ">", quote_string(GraphFile)
+                  binary_to_list(OutFile), ">", binary_to_list(GraphFile)
                  ]
                 ),
     _Ret = os:cmd(GraphCmd),
     {ok, ThreadIdBin}.
 
-quote_string(String) ->
-    io_lib:format("'~s'", [String]).
+quote_string(String) when is_list(String) ->
+    quote_string(list_to_binary(String));
+quote_string(String) when is_binary(String) ->
+    Safe = binary:replace(
+             String,
+             [<<";">>, <<"&">>, <<"/">>, <<"\\">>, <<"'">>, <<"\"">>],
+             <<"">>,
+             [global]
+            ),
+    io_lib:format("'~s'", [Safe]).
