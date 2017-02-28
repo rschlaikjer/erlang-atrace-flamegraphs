@@ -60,7 +60,7 @@ do_process_trace(Md5) ->
     InFile = aflame_fs:get_trace_file(Md5),
     OutPath = list_to_binary(aflame_fs:output_dir(Md5)),
     {ok, Parser} = aflame_trace_parser:start_link({file, InFile}),
-    ThreadIds = aflame_trace_parser:get_thread_ids(Parser),
+    ThreadIds = lists:sort(aflame_trace_parser:get_thread_ids(Parser)),
     OutNames = lists:map(
                  fun(ThreadId) -> flatten_thread(Parser, OutPath, ThreadId) end,
                  ThreadIds
@@ -69,7 +69,7 @@ do_process_trace(Md5) ->
                  fun(Name) -> Name /= undefined end,
                  OutNames
                 ),
-    write_index_file(Md5, lists:sort(SvgNames)),
+    write_index_file(Md5, SvgNames),
     aflame_trace_parser:close(Parser).
 
 write_index_file(Md5, SvgNames) ->
