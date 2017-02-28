@@ -10,6 +10,8 @@
     poolboy,
     uuid,
     stdlib,
+    jsone,
+    raven,
     runtime_tools
    ]},
   {env,[]},
