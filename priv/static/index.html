@@ -1,27 +1,130 @@
 <html>
     <head>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=PT+Sans:400,400italic,700|Abril+Fatface">
         <style>
+body {
+    font-family: "PT Sans", Helvetica, Arial, sans-serif;
+    color: #353535;
+}
+
+h1 {
+    font-size: 3rem;
+    margin: 0px;
+}
+
+h2 {
+    margin: 8px 0px 8px 0px;
+}
+
 .centered {
+    display: table;
+    margin: 0 auto;
+}
+.boxed {
+    background-color: #E9F5C8;
+    padding: 1rem;
+    border: 1px solid #FFC22F;
+    width: 80%;
+}
+#footer {
+    background-image: url("/static/baseline.png");
+    background-position: bottom center;
+    background-repeat: repeat-x;
+    width: 100%;
+    height: 368px;
     position: fixed;
-    top: 25%;
-    left: 50%;
-    /* bring your own prefixes */
-    transform: translate(-50%, -50%);
+    bottom: 0;
+    left: 0;
+    z-index: -1;
+}
+.header .img {
+    float: left;
+}
+.header .h1 {
+    position: relative;
+    margin: 0px;
+}
+.details {
+    clear: both;
+}
+.upload {
+    margin: 16px;
 }
         </style>
     </head>
-    <div class="centered">
-        <center>
-            <img width="100px" src="/static/aflame.png">
-            <h1> AFlame </h1>
-            <h2> Android Trace file to flamegraph converter (<a href="https://github.com/rschlaikjer/erlang-atrace-flamegraphs" target="_blank">Github</a>)</h2>
-        </center>
-        <p>
-        To gather traces, use the <a href="https://developer.android.com/reference/android/os/Debug.html#startMethodTracing(java.lang.String, int, int)">Debug#{start,stop}MethodTracing</a> calls to generate a trace file.
-        </p>
-        <form action="/upload_trace" method="post" enctype="multipart/form-data">
-            <input type="file" name="trace_file" accept=".trace">
-            <input type="submit" value="Upload">
-        </form>
-    </div>
+    <body>
+        <a href="https://github.com/rschlaikjer/erlang-atrace-flamegraphs"
+            target="_blank">
+            <img style="position: absolute; top: 0; left: 0; border: 0;"
+                 src="/static/github.png"
+                 alt="Fork me on GitHub"
+                 >
+        </a>
+            <div class="centered boxed">
+                <img style="float: left; padding: 1rem; width: 256px;" src="/static/aflame.png">
+                <h1> AFlame </h1>
+                <h2> Android Trace file to flamegraph converter</h2>
+                <div class="upload">
+                    <form action="/upload_trace" method="post" enctype="multipart/form-data">
+                        <input type="file" name="trace_file" accept=".trace">
+                        <input class="button" type="submit" value="Upload">
+                    </form>
+                </div>
+                <div class="details">
+                    <h2>What are flamegraphs?</h2>
+                    <a href="http://www.brendangregg.com/flamegraphs.html">Flame graphs</a>
+                    are an invention of Brendan Gregg, a profiling
+                    extraordinaire,
+                    that make it simple to observe the amount of time in each
+                    part of a system's call stack. The X axis shows the calls on
+                    the stack (alphabetically, not in time order) and the Y axis
+                    is the depth of the call stack. The wider the frame, the
+                    more time was spent in it and it's descendants. For this
+                    tool, the size is directly proportional to the elapsed
+                    execution time (in microseconds).
+
+                    <h2>How do I generate a trace file?</h2>
+                    To gather traces, use the
+                    <a href="https://developer.android.com/reference/android/os/Debug.html#startMethodTracing(java.lang.String, int, int)">Debug#{start,stop}MethodTracing</a>
+                    calls to generate a trace file. Place the call to start
+                    tracing before the code under test, and the call to stop
+                    tracing directly after. Keeping the profile fairly short
+                    will help keep it readable.
+                    <br/>
+                    If you experience too much of a performance degradation
+                    from the tracing overhead to get a good output, you may
+                    want to try the <a href="">startMethodTracingSampling</a>
+                    call available on Android APIs 21 and up. It is
+                    significantly lower overhead, but due to the nature of a
+                    sampling profiler may miss some data.
+                    <br/>
+                    As an example, here is how one would instrument the
+                    onCreate method of an activity in order to determine what
+                    is causing slow starts:
+                    <pre style="line-height: 125%; background-color: #F6F6F6; padding: 16px;"><span style="color: #AA22FF; font-weight: bold">private</span> <span style="color: #AA22FF; font-weight: bold">static</span> <span style="color: #AA22FF; font-weight: bold">final</span> <span style="color: #00BB00; font-weight: bold">int</span> MEGABYTE <span style="color: #666666">=</span> <span style="color: #666666">1024</span> <span style="color: #666666">*</span> <span style="color: #666666">1024;</span>
+
+<span style="color: #AA22FF">@Override</span>
+<span style="color: #AA22FF; font-weight: bold">protected</span> <span style="color: #00BB00; font-weight: bold">void</span> <span style="color: #00A000">onCreate</span><span style="color: #666666">(</span>Bundle savedInstanceState<span style="color: #666666">)</span> <span style="color: #666666">{</span>
+    <span style="color: #AA22FF; font-weight: bold">super</span><span style="color: #666666">.</span><span style="color: #BB4444">onCreate</span><span style="color: #666666">(</span>savedInstanceState<span style="color: #666666">);</span>
+    <span style="color: #008800; font-style: italic">// Call the resulting trace file 'onCreate.trace', and allow a 128MiB</span>
+    <span style="color: #008800; font-style: italic">// buffer for collecting trace data.</span>
+    Debug<span style="color: #666666">.</span><span style="color: #BB4444">startMethodTracing</span><span style="color: #666666">(</span><span style="color: #BB4444">"onCreate"</span><span style="color: #666666">,</span> <span style="color: #666666">128</span> <span style="color: #666666">*</span> MEGABYTE<span style="color: #666666">);</span>
+    <span style="color: #008800; font-style: italic">// Existing onCreate code</span>
+    <span style="color: #666666">[...]</span>
+    <span style="color: #008800; font-style: italic">// Stop method tracing</span>
+    Debug<span style="color: #666666">.</span><span style="color: #BB4444">stopMethodTracing</span><span style="color: #666666">();</span>
+<span style="color: #666666">}</span>
+                    </pre>
+                    <h2>I'd like to know more</h2>
+                    Feel free to read either the <a
+                        href="https://rhye.org/post/android-profiling-flamegraphs/">write-up</a> I
+                    have on the format of the trace file and how it is
+                    converted to a format the flamegraph tool understands, or
+                    read the <a
+                        href="https://github.com/rschlaikjer/erlang-atrace-flamegraphs">source</a>
+                    on Github to see for yourself.
+                </div>
+            </div>
+            <div id="footer"></div>
+    </body>
 </html>

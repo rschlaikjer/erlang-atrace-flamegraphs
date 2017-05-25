@@ -8,13 +8,27 @@
     /* bring your own prefixes */
     transform: translate(-50%, -50%);
 }
+#footer {
+    background-image: url("/static/baseline.png");
+    background-position: bottom center;
+    background-repeat: repeat-x;
+    width: 100%;
+    height: 368px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: -1;
+}
         </style>
     </head>
-    <meta http-equiv="refresh" content="5">
-    <div class="centered">
-        <center>
-            <h1>Processing Trace</h1>
-            <img src='/static/loader.gif'>
-        </center>
-    </div>
+    <body>
+        <meta http-equiv="refresh" content="5">
+        <div class="centered">
+            <center>
+                <h1>Processing Trace</h1>
+                <img src='/static/loader.gif'>
+            </center>
+        </div>
+        <div id="footer"></div>
+    </body>
 </html>
