@@ -1,5 +1,6 @@
 # AFlame
-Visualizer for android profiling information
+### Visualizer for android profiling information ([try it!](https://aflame.rhye.org/))
+
 
 AFlame is a tool for extracting data from Android method trace files without
 having to use
