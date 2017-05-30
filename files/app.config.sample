@@ -12,6 +12,9 @@
         {dsn, "your_sentry_dsn"},
         {error_logger, true}
     ]},
+    {estatsd, [
+        {graphite_host, "graphite"}
+    ]},
     {aflame, [
         {server, [
             {http_port, 8192},

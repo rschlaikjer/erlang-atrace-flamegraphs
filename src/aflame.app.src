@@ -12,7 +12,8 @@
     stdlib,
     jsone,
     raven,
-    runtime_tools
+    runtime_tools,
+    estatsd
    ]},
   {env,[]},
   {modules, []},
