@@ -408,9 +408,13 @@ new_method_record(MethodHex, ClassName, MethodName, Signature, SourceFile) ->
     new_method_record(MethodHex, ClassName, MethodName, Signature, SourceFile, 0).
 new_method_record(MethodHex, ClassName, MethodName, Signature, SourceFile, SourceLine) ->
     MethodId = erlang:binary_to_integer(
-                 binary:part(MethodHex, {2, byte_size(MethodHex)-2}),
-                 16
-                ),
+        case MethodHex of
+            <<"0x", Rest/binary>> ->
+                Rest;
+            _ -> MethodHex
+        end,
+        16
+    ),
     #trace_method{
        method_id=MethodId,
        class_name=ClassName,
