@@ -51,6 +51,16 @@ h2 {
     margin: 16px;
 }
         </style>
+    <script type="text/javascript">
+        function validate() {
+            var file = document.forms["upload"]["trace_file"].value;
+            if (file == null || file == "") {
+                alert("Please select a file to upload");
+                return false;
+            }
+            return true;
+        }
+    </script>
     </head>
     <body>
         <a href="https://github.com/rschlaikjer/erlang-atrace-flamegraphs"
@@ -65,7 +75,7 @@ h2 {
                 <h1> AFlame </h1>
                 <h2> Android Trace file to flamegraph converter</h2>
                 <div class="upload">
-                    <form action="/upload_trace" method="post" enctype="multipart/form-data">
+                    <form name="upload" onSubmit="return validate()" action="/upload_trace" method="post" enctype="multipart/form-data">
                         <input type="file" name="trace_file" accept=".trace">
                         <input class="button" type="submit" value="Upload">
                     </form>
