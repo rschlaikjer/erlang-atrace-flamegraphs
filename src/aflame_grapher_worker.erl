@@ -12,15 +12,14 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
--record(state, {}).
+-record(state, {md5}).
 
 % Public API
 
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
-process_trace(Md5) ->
-    spawn(
+process_trace(Md5) -> spawn(
       poolboy,
       transaction,
       [
@@ -33,17 +32,22 @@ process_trace(Md5) ->
 % Callbacks
 
 init([]) ->
+    process_flag(trap_exit, true),
     {ok, #state{}}.
 
-handle_call({process_trace, Md5}, _From, State=#state{}) ->
+handle_call({process_trace, Md5}, _From, _State) ->
     do_process_trace(Md5),
-    {reply, ok, State};
+    {reply, ok, #state{md5=Md5}};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+handle_info({'EXIT', _Pid, Err}, #state{md5=Md5}) ->
+    lager:info("Exception in child: ~p~n", [Err]),
+    write_error_page(Md5, Err),
+    {noreply, #state{}};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -56,6 +60,23 @@ code_change(_OldVsn, State, _Extra) ->
 % Internal
 
 do_process_trace(Md5) ->
+    try parse_and_write(Md5)
+    catch _:_ ->
+        lager:info("Caught error processing trace: ~p~n", [erlang:get_stacktrace()])
+    end.
+
+write_error_page(Md5, Stacktrace) ->
+    {ok, OutFile} = file:open(aflame_fs:get_trace_index(Md5), [write]),
+    ok = file:write(OutFile, [
+        "<center><h1>Error processing ", Md5, "</h1><br/>",
+        "Please <a target='_blank' href='https://github.com/rschlaikjer/erlang-atrace-flamegraphs/issues'>open an issue</a> if this is not what you had hoped for.",
+        "</center>",
+        "Guru meditation:\n<pre>", io_lib:format("~p~n", [Stacktrace]), "</pre>"
+    ]),
+    file:close(OutFile),
+    ok.
+
+parse_and_write(Md5) ->
     lager:info("Worker asked to process trace: ~p~n", [Md5]),
     InFile = aflame_fs:get_trace_file(Md5),
     OutPath = list_to_binary(aflame_fs:output_dir(Md5)),
