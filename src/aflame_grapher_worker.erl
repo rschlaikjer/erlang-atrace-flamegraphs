@@ -60,9 +60,14 @@ code_change(_OldVsn, State, _Extra) ->
 % Internal
 
 do_process_trace(Md5) ->
-    try parse_and_write(Md5)
-    catch _:_ ->
-        lager:info("Caught error processing trace: ~p~n", [erlang:get_stacktrace()])
+    case filelib:file_size(aflame_fs:get_trace_file(Md5)) of
+        0 ->
+            write_error_page(Md5, "File has zero length");
+        _ ->
+            try parse_and_write(Md5)
+            catch _:_ ->
+                lager:info("Caught error processing trace: ~p~n", [erlang:get_stacktrace()])
+            end
     end.
 
 write_error_page(Md5, Stacktrace) ->
