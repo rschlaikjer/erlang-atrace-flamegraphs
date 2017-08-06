@@ -10,7 +10,7 @@
     },
     {raven, [
         {dsn, "your_sentry_dsn"},
-        {error_logger, true}
+        {error_logger, false}
     ]},
     {estatsd, [
         {graphite_host, "graphite"}
