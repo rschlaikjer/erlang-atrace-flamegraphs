@@ -44,6 +44,8 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+handle_info({'EXIT', _Pid, normal}, #state{md5=Md5}) ->
+    {noreply, #state{}};
 handle_info({'EXIT', _Pid, Err}, #state{md5=Md5}) ->
     lager:info("Exception in child: ~p~n", [Err]),
     write_error_page(Md5, Err),
