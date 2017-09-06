@@ -333,7 +333,8 @@ parse_trace_record(Record) ->
     MethodAction = case MethodIdAction band 16#00000003 of
                        16#00 -> enter;
                        16#01 -> exit;
-                       16#02 -> unwind
+                       16#02 -> unwind;
+                       16#03 -> unused  % Supposedly unused, but present in some traces?
                    end,
 
     #call_record{
