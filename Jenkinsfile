@@ -23,15 +23,15 @@ node {
 
     stage('Kubernetes Deploy') {
         def commit = readFile('.commit').trim()
-        sh "docker run --rm lachlanevenson/k8s-kubectl:v1.7.8 \
-        --server=http://192.168.0.1:8080 \
-        --username=default \
+        sh "docker run --rm \
+        --mount type=bind,source=/creds/kubectl/,target=/root/.kube/ \
+        lachlanevenson/k8s-kubectl:v1.10.2 \
         set image deployment/aflame-deployment \
         aflame=docker-registry:5000/erlang-aflame:${commit}"
 
-        sh "docker run --rm lachlanevenson/k8s-kubectl:v1.7.8 \
-        --server=http://192.168.0.1:8080 \
-        --username=default \
+        sh "docker run --rm \
+        --mount type=bind,source=/creds/kubectl/,target=/root/.kube/ \
+        lachlanevenson/k8s-kubectl:v1.10.2 \
         rollout status deployment/aflame-deployment"
     }
 
