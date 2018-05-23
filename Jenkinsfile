@@ -7,6 +7,10 @@ node {
         sh "git rev-parse origin/${sha1} > .commit"
     }
 
+    stage('Inject credentials') {
+        sh "cp /creds/aflame/app.config files/app.config"
+    }
+
     stage('Build image') {
         app = docker.build("erlang-aflame")
     }
@@ -16,6 +20,7 @@ node {
         docker.withRegistry('http://docker-registry:5000') {
             app.push("${commit}")
             app.push("${sha1}")
+            app.push("latest")
         }
 
         sh "docker image prune -fa --filter 'until=240h'"
