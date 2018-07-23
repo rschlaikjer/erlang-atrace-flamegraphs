@@ -402,7 +402,9 @@ parse_method_line(Line) ->
         [MethodHex, ClassName, MethodName, Signature, Source] ->
             new_method_record(MethodHex, ClassName, MethodName, Signature, Source);
         [MethodHex, ClassName, MethodName, Signature, Source, SourceLine] ->
-            new_method_record(MethodHex, ClassName, MethodName, Signature, Source, SourceLine)
+            new_method_record(MethodHex, ClassName, MethodName, Signature, Source, SourceLine);
+        _ ->
+            bad_method
     end.
 
 new_method_record(MethodHex, ClassName, MethodName, Signature, SourceFile) ->
