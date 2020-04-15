@@ -38,6 +38,16 @@ To run a local copy of AFlame (with [rebar](http://www.rebar3.org/)):
     # Open it up in your browser
     xdg-open http://localhost:8192/
 
+This repository also contains a Dockerfile that can be used to run the system
+without installing all the necessary dependencies on the host. To do so,
+
+    # From within the top level of this repo
+    docker build .
+    # Take the successfully built hash from the docker build output as $HASH
+    # For very large traces, you may need to increase the memory the container
+    # is allowed to use by passing --memory=3g (or more, as necessary).
+    docker run --rm -it $HASH
+
 ## Android Trace file format
 The information here is based on the ART implementation of tracing, which can be viewed here:
 https://android.googlesource.com/platform/art/+/master/runtime/trace.cc

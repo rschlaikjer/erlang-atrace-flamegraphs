@@ -2,10 +2,10 @@ FROM erlang:21.0.1 as builder
 
 WORKDIR /src
 COPY . /src
-RUN rebar3 as prod tar
+RUN rebar3 as docker tar
 
 RUN mkdir -p /release
-RUN tar -zxvf /src/_build/prod/rel/*/*.tar.gz -C /release
+RUN tar -zxvf /src/_build/docker/rel/*/*.tar.gz -C /release
 
 FROM debian:stretch-slim
 
