@@ -18,5 +18,6 @@ COPY --from=builder /release /deploy
 ADD flamegraph /usr/bin
 
 EXPOSE 80
+EXPOSE 8192
 
 CMD /deploy/bin/aflame foreground
